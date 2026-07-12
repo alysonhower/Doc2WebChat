@@ -1,0 +1,46 @@
+import { Chatbot } from '../types/chatbot'
+import {
+  ai_studio,
+  arena,
+  chatgpt,
+  claude,
+  copilot,
+  deepseek,
+  doubao,
+  gemini,
+  github_copilot,
+  grok,
+  hugging_chat,
+  kimi,
+  meta,
+  mistral,
+  open_webui,
+  openrouter,
+  qwen,
+  together,
+  yuanbao,
+  z_ai
+} from './index'
+
+export const CHATBOT_ADAPTERS: Record<string, Chatbot> = {
+  ai_studio,
+  arena,
+  chatgpt,
+  claude,
+  copilot,
+  deepseek,
+  doubao,
+  gemini,
+  github_copilot,
+  grok,
+  hugging_chat,
+  kimi,
+  meta,
+  mistral,
+  open_webui,
+  openrouter,
+  qwen,
+  together,
+  yuanbao,
+  z_ai
+}

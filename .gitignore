@@ -1,2 +1,8 @@
-/node_modules
-/docs/index.md
+node_modules/
+**/__pycache__/
+*.py[cod]
+/apps/desktop/.pytest_cache
+/apps/desktop/.ruff_cache
+/apps/desktop/.venv
+/apps/desktop/frontend/coverage
+/apps/desktop/src/doc2webchat/ui

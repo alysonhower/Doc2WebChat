@@ -1,3 +1,0 @@
-<files>
-const a = 1;
-</files>

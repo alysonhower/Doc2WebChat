@@ -1,0 +1,38 @@
+{
+  "name": "@doc2webchat/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build --config frontend/vite.config.ts",
+    "dev": "vite --config frontend/vite.config.ts",
+    "test": "vitest run --config frontend/vitest.config.ts",
+    "lint": "eslint frontend/src --ext ts,tsx --max-warnings 0",
+    "typecheck": "tsc --noEmit -p frontend/tsconfig.json"
+  },
+  "dependencies": {
+    "@lexical/plain-text": "^0.47.0",
+    "@lexical/react": "^0.47.0",
+    "@lexical/utils": "^0.47.0",
+    "lexical": "^0.47.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/react": "^18.3.28",
+    "@types/react-dom": "^18.3.7",
+    "@typescript-eslint/eslint-plugin": "^8.54.0",
+    "@typescript-eslint/parser": "^8.54.0",
+    "@vitejs/plugin-react": "^5.1.4",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "jsdom": "^28.0.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.1.4",
+    "vitest": "^4.1.10"
+  }
+}

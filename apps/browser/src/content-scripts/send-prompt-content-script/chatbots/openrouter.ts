@@ -1,10 +1,11 @@
-import { default_system_instructions } from '@shared/constants/default-system-instructions'
+import { CHATBOTS } from '@shared/constants/chatbots'
 import { Chatbot } from '../types/chatbot'
 import {
   add_apply_response_button,
   observe_for_responses
 } from '../utils/add-apply-response-button'
 import { report_initialization_error } from '../utils/report-initialization-error'
+import { prefill_message } from '../utils/prefill-message'
 
 const show_options_modal = async (function_name: string) => {
   const options_button = Array.from(
@@ -77,7 +78,8 @@ export const openrouter: Chatbot = {
   },
   enter_system_instructions: async (chat) => {
     const system_instructions =
-      chat.system_instructions || default_system_instructions
+      chat.system_instructions ||
+      CHATBOTS.OpenRouter.default_system_instructions
     if (!system_instructions) return
     if (!(await show_options_modal('enter_system_instructions'))) return
     const textarea = document.querySelector(
@@ -327,16 +329,12 @@ export const openrouter: Chatbot = {
       })
       return
     }
-    input_element.value = params.message
-    input_element.dispatchEvent(new Event('input', { bubbles: true }))
-    input_element.focus()
+    prefill_message(input_element, params.message, 'value')
   },
   setup_observer: (params) => {
     const add_buttons = (footer: Element) => {
       add_apply_response_button({
-        client_id: params.client_id,
-        raw_instructions: params.raw_instructions,
-        edit_format: params.edit_format,
+        interaction: params.interaction,
         footer,
         get_chat_turn: (f) => f.closest('div[data-message-id]'),
         perform_copy: (f) => {
@@ -362,6 +360,7 @@ export const openrouter: Chatbot = {
     }
 
     observe_for_responses({
+      interaction: params.interaction,
       chatbot_name: 'OpenRouter',
       is_generating: () => !!document.querySelector('.animate-spin'),
       footer_selector:

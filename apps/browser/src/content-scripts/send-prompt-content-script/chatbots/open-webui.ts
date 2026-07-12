@@ -1,10 +1,11 @@
-import { default_system_instructions } from '@shared/constants/default-system-instructions'
+import { CHATBOTS } from '@shared/constants/chatbots'
 import { Chatbot } from '../types/chatbot'
 import {
   add_apply_response_button,
   observe_for_responses
 } from '../utils/add-apply-response-button'
 import { report_initialization_error } from '../utils/report-initialization-error'
+import { prefill_message } from '../utils/prefill-message'
 
 export const open_webui: Chatbot = {
   wait_until_ready: async () => {
@@ -25,7 +26,8 @@ export const open_webui: Chatbot = {
   },
   enter_system_instructions: async (chat) => {
     const system_instructions =
-      chat.system_instructions || default_system_instructions
+      chat.system_instructions ||
+      CHATBOTS['Open WebUI'].default_system_instructions
     if (!system_instructions) return
     const controls_button = document.querySelector(
       'button[aria-label="Controls"]'
@@ -284,22 +286,17 @@ export const open_webui: Chatbot = {
       return
     }
 
-    input_element.innerText = params.message
-    input_element.dispatchEvent(new Event('input', { bubbles: true }))
-    input_element.focus()
+    prefill_message(input_element, params.message, 'innerText')
   },
   setup_observer: (params) => {
     const add_buttons = (footer: Element) => {
       add_apply_response_button({
-        client_id: params.client_id,
-        raw_instructions: params.raw_instructions,
-        edit_format: params.edit_format,
+        interaction: params.interaction,
         footer,
         get_chat_turn: (f) =>
           f.parentElement?.querySelector(
             '#response-content-container'
           ) as HTMLElement,
-        get_code_from_block: (b) => b.querySelector('.cm-line')?.textContent,
         perform_copy: (f) => {
           const copy_button = f.querySelector(
             'button.copy-response-button'
@@ -319,6 +316,7 @@ export const open_webui: Chatbot = {
     }
 
     observe_for_responses({
+      interaction: params.interaction,
       chatbot_name: 'Open WebUI',
       is_generating: () =>
         !!document.querySelector(

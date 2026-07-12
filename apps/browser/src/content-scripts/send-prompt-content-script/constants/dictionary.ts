@@ -1,2 +1,2 @@
-export const apply_response_button_title =
-  'Copy the response to clipboard and apply'
+export const import_response_button_title =
+  'Copy with the provider control and import into Doc2WebChat'

@@ -42,8 +42,10 @@ export const use_firefox_containers = () => {
       const identities = await browser.contextualIdentities.query({})
       set_containers(identities)
 
-      const { 'selected-firefox-container': selected_id } =
-        await browser.storage.local.get('selected-firefox-container')
+      const { 'doc2webchat:selected-firefox-container': selected_id } =
+        await browser.storage.local.get(
+          'doc2webchat:selected-firefox-container'
+        )
       set_selected_container_id((selected_id as string) || '')
     } catch (error) {
       console.error('Error loading containers:', error)
@@ -70,9 +72,13 @@ export const use_firefox_containers = () => {
     const value = e.target.value
     set_selected_container_id(value)
     if (value) {
-      await browser.storage.local.set({ 'selected-firefox-container': value })
+      await browser.storage.local.set({
+        'doc2webchat:selected-firefox-container': value
+      })
     } else {
-      await browser.storage.local.remove('selected-firefox-container')
+      await browser.storage.local.remove(
+        'doc2webchat:selected-firefox-container'
+      )
     }
   }
 

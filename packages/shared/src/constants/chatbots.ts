@@ -1,4 +1,7 @@
+import { PROVIDER_REGISTRY } from '../types/provider-registry'
+
 type Chatbot = {
+  id: string
   url: string
   supports_custom_temperature?: boolean
   supports_custom_top_p?: boolean
@@ -12,175 +15,53 @@ type Chatbot = {
   url_override_label?: string
   url_override_disabled_options?: string[]
   default_system_instructions?: string
-  supported_options?: {
-    [option: string]: string
-  }
-  models?: {
-    [model: string]: {
+  supported_options?: Record<string, string>
+  models?: Record<
+    string,
+    {
       label: string
       disabled_options?: string[]
       supported_reasoning_efforts?: string[]
     }
-  }
+  >
 }
 
-export const CHATBOTS = {
-  'AI Studio': {
-    url: 'https://aistudio.google.com/prompts/new_chat',
-    supports_custom_temperature: true,
-    supports_custom_top_p: true,
-    supports_system_instructions: true,
-    supports_thinking_budget: true,
-    default_system_instructions: "You're a helpful coding assistant.",
-    supported_options: {
-      'hide-panel': 'Hide panel',
-      'grounding-with-google-search': 'Grounding with Google Search',
-      'url-context': 'URL context'
-    },
-    models: {
-      'gemini-3.5-flash': {
-        label: 'Gemini 3.5 Flash',
-        supported_reasoning_efforts: ['Minimal', 'Low', 'Medium', 'High']
-      },
-      'gemini-3.1-pro-preview': {
-        label: 'Gemini 3.1 Pro Preview',
-        supported_reasoning_efforts: ['Low', 'Medium', 'High']
-      },
-      'gemini-3.1-flash-lite': {
-        label: 'Gemini 3.1 Flash Lite',
-        supported_reasoning_efforts: ['Minimal', 'Low', 'Medium', 'High']
+export const CHATBOTS: Record<string, Chatbot> = Object.fromEntries(
+  PROVIDER_REGISTRY.providers.map((provider) => {
+    const controls = provider.controls
+    const models = controls.model?.values
+      ? Object.fromEntries(
+          Object.entries(controls.model.values).map(([id, model]) => [
+            id,
+            {
+              label: model.label,
+              disabled_options: model.disabled_options,
+              supported_reasoning_efforts: model.reasoning_efforts
+            }
+          ])
+        )
+      : undefined
+    return [
+      provider.label,
+      {
+        id: provider.id,
+        url: provider.canonical_url,
+        supports_custom_temperature: controls.temperature,
+        supports_custom_top_p: controls.top_p,
+        supports_system_instructions:
+          controls.system_instructions !== undefined,
+        supports_user_provided_model: controls.model?.user_provided,
+        supports_user_provided_port: controls.port,
+        supports_reasoning_effort: controls.reasoning_effort !== undefined,
+        supported_reasoning_efforts: controls.reasoning_effort?.values,
+        supports_thinking_budget: controls.thinking_budget,
+        supports_url_override: controls.url_override !== undefined,
+        url_override_label: controls.url_override?.label,
+        url_override_disabled_options: controls.url_override?.disabled_options,
+        default_system_instructions: controls.system_instructions?.default,
+        supported_options: controls.options,
+        models
       }
-    }
-  } as Chatbot,
-  Arena: {
-    url: 'https://arena.ai/',
-    supports_user_provided_model: true
-  } as Chatbot,
-  ChatGPT: {
-    url: 'https://chatgpt.com/',
-    supports_url_override: true,
-    url_override_label: 'Project URL',
-    url_override_disabled_options: ['temporary'],
-    supported_options: {
-      temporary: 'Temporary',
-      thinking: 'Thinking (free plans)'
-    }
-  } as Chatbot,
-  Claude: {
-    url: 'https://claude.ai/new',
-    supports_url_override: true,
-    url_override_label: 'Project URL',
-    url_override_disabled_options: ['incognito-chat'],
-    supported_options: {
-      'incognito-chat': 'Incognito chat'
-    }
-  } as Chatbot,
-  Copilot: {
-    url: 'https://copilot.microsoft.com/'
-  } as Chatbot,
-  DeepSeek: {
-    url: 'https://chat.deepseek.com/',
-    supported_options: { 'deep-think': 'DeepThink', search: 'Search' }
-  } as Chatbot,
-  Doubao: {
-    url: 'https://www.doubao.com/chat/',
-    supported_options: { 'deep-thinking': 'Deep Thinking' }
-  } as Chatbot,
-  Gemini: {
-    url: 'https://gemini.google.com/app',
-    supported_options: { 'temporary-chat': 'Temporary chat' },
-    supports_url_override: true,
-    url_override_label: 'Gem URL',
-    url_override_disabled_options: ['temporary-chat'],
-    supports_reasoning_effort: true,
-    supported_reasoning_efforts: ['Standard', 'Extended'],
-    models: {
-      'flash-lite': { label: 'Flash-Lite' },
-      flash: { label: 'Flash' },
-      pro: { label: 'Pro' }
-    }
-  } as Chatbot,
-  'GitHub Copilot': {
-    url: 'https://github.com/copilot',
-    supports_url_override: true,
-    url_override_label: 'Space URL'
-  } as Chatbot,
-  Grok: {
-    url: 'https://grok.com/',
-    supports_url_override: true,
-    url_override_label: 'Project URL',
-    url_override_disabled_options: ['private'],
-    supported_options: { private: 'Private' }
-  } as Chatbot,
-  HuggingChat: {
-    url: 'https://huggingface.co/chat/',
-    supports_user_provided_model: true
-  } as Chatbot,
-  Kimi: {
-    url: 'https://www.kimi.com/'
-  } as Chatbot,
-  'Meta AI': {
-    url: 'https://www.meta.ai/'
-  } as Chatbot,
-  Mistral: {
-    url: 'https://chat.mistral.ai/chat',
-    supports_url_override: true,
-    url_override_label: 'Project URL',
-    url_override_disabled_options: ['incognito'],
-    supported_options: {
-      incognito: 'Incognito mode',
-      think: 'Think'
-    }
-  } as Chatbot,
-  'Open WebUI': {
-    url: 'http://openwebui/',
-    supports_custom_temperature: true,
-    supports_custom_top_p: true,
-    supports_system_instructions: true,
-    supports_user_provided_model: true,
-    supports_user_provided_port: true,
-    default_system_instructions: "You're a helpful coding assistant."
-  } as Chatbot,
-  OpenRouter: {
-    url: 'https://openrouter.ai/chat',
-    supports_custom_temperature: true,
-    supports_custom_top_p: true,
-    supports_system_instructions: true,
-    supports_reasoning_effort: true,
-    supported_reasoning_efforts: [
-      'None',
-      'Minimal',
-      'Low',
-      'Medium',
-      'High',
-      'XHigh',
-      'Max'
-    ],
-    default_system_instructions: "You're a helpful coding assistant.",
-    supported_options: {
-      'disable-reasoning': 'Disable reasoning (for hybrid models)'
-    }
-  } as Chatbot,
-  Qwen: {
-    url: 'https://chat.qwen.ai/',
-    supports_url_override: true,
-    url_override_label: 'Project URL',
-    supported_options: {
-      thinking: 'Thinking',
-      search: 'Search',
-      temporary: 'Temporary'
-    }
-  } as Chatbot,
-  Together: {
-    url: 'https://chat.together.ai/'
-  } as Chatbot,
-  Yuanbao: {
-    url: 'https://yuanbao.tencent.com/chat'
-  } as Chatbot,
-  Z: {
-    url: 'https://chat.z.ai/',
-    supported_options: {
-      'deep-think': 'Deep Think'
-    }
-  } as Chatbot
-}
+    ]
+  })
+)

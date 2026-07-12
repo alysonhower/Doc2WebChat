@@ -4,6 +4,7 @@ import {
   observe_for_responses
 } from '../utils/add-apply-response-button'
 import { report_initialization_error } from '../utils/report-initialization-error'
+import { prefill_message } from '../utils/prefill-message'
 
 export const z_ai: Chatbot = {
   wait_until_ready: async () => {
@@ -51,18 +52,14 @@ export const z_ai: Chatbot = {
       })
       return
     }
-    input_element.value = params.message
-    input_element.dispatchEvent(new Event('input', { bubbles: true }))
+    prefill_message(input_element, params.message, 'value')
   },
   setup_observer: (params) => {
     const add_buttons = (footer: Element) => {
       add_apply_response_button({
-        client_id: params.client_id,
-        raw_instructions: params.raw_instructions,
-        edit_format: params.edit_format,
+        interaction: params.interaction,
         footer,
         get_chat_turn: (f) => f.parentElement!.querySelector('.chat-assistant'),
-        get_code_from_block: (b) => b.querySelector('.cm-line')?.textContent,
         perform_copy: (f) => {
           const copy_button = f.querySelector('button.copy-response-button')
           if (!copy_button) {
@@ -79,6 +76,7 @@ export const z_ai: Chatbot = {
     }
 
     observe_for_responses({
+      interaction: params.interaction,
       chatbot_name: 'Z.AI',
       is_generating: () =>
         !document.querySelector('button[id="send-message-button"]'),

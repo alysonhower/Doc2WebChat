@@ -4,7 +4,26 @@ import CopyWebpackPlugin from 'copy-webpack-plugin'
 import { CleanWebpackPlugin } from 'clean-webpack-plugin'
 import TsconfigPathsPlugin from 'tsconfig-paths-webpack-plugin'
 import MiniCssExtractPlugin from 'mini-css-extract-plugin'
-import 'webpack-dev-server'
+import * as fs from 'fs'
+
+const provider_registry = JSON.parse(
+  fs.readFileSync(
+    path.resolve(__dirname, '../../packages/shared/src/providers.json'),
+    'utf8'
+  )
+) as { providers: Array<{ manifest_matches: string[] }> }
+
+const generated_manifest = (content: Buffer) => {
+  const manifest = JSON.parse(content.toString('utf8'))
+  manifest.content_scripts[0].matches = Array.from(
+    new Set(
+      provider_registry.providers.flatMap(
+        (provider) => provider.manifest_matches
+      )
+    )
+  )
+  return JSON.stringify(manifest, null, 2)
+}
 
 const config = (_: any, argv: Record<string, any>): webpack.Configuration => {
   const is_production = argv.mode == 'production'
@@ -15,7 +34,11 @@ const config = (_: any, argv: Record<string, any>): webpack.Configuration => {
     }) as unknown as webpack.WebpackPluginInstance,
     new CopyWebpackPlugin({
       patterns: [
-        { from: 'src/manifest.json', to: 'manifest.json' },
+        {
+          from: 'src/manifest.json',
+          to: 'manifest.json',
+          transform: generated_manifest
+        },
         { from: 'src/icons', to: 'icons' },
         { from: 'src/views/popup/index.html', to: 'popup.html' },
         { from: 'src/views/popup/index.css', to: 'index.css' }

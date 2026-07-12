@@ -13,10 +13,10 @@ export const show_response_ready_notification = async (params: {
 
   if (permission == 'granted') {
     const notification = new Notification(
-      `CWC - ${params.chatbot_name} finished responding`,
+      `Doc2WebChat - ${params.chatbot_name} finished responding`,
       {
         body: 'Your response is ready. Click to view.',
-        tag: 'cwc'
+        tag: 'doc2webchat'
       }
     )
 

@@ -14,9 +14,7 @@ export const Popup: React.FC = () => {
 
   return (
     <div className={styles.popup}>
-      <p className={styles['popup__title']}>
-        Autofill for Code Web Chat is alive
-      </p>
+      <p className={styles['popup__title']}>Doc2WebChat is connected locally</p>
 
       {is_firefox && (
         <div className={styles['popup__firefox']}>
@@ -30,7 +28,7 @@ export const Popup: React.FC = () => {
           ) : (
             <>
               <label className={styles['popup__select-label']}>
-                Autofill prompts in container:
+                Open provider tabs in container:
               </label>
               <select
                 value={selected_container_id}

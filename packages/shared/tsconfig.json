@@ -7,10 +7,10 @@
     "sourceMap": true,
     "strict": true,
     "esModuleInterop": true,
-    "jsx": "react-jsx",
-    "jsxImportSource": "react",
+    "resolveJsonModule": true,
+    "types": ["jest"],
     "baseUrl": "."
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "include": ["src/**/*.ts"],
   "exclude": ["node_modules"]
 }

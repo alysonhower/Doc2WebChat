@@ -1,4 +1,4 @@
-import { Chat } from '@shared/types/websocket-message'
+import { Chat, InteractionIdentity } from '@shared/types/websocket-message'
 
 export type Chatbot = {
   wait_until_ready?: () => Promise<void>
@@ -10,9 +10,7 @@ export type Chatbot = {
   set_reasoning_effort?: (chat: Chat) => Promise<void>
   enter_system_instructions?: (chat: Chat) => Promise<void>
   setup_observer?: (params: {
-    client_id: number
-    raw_instructions?: string
-    edit_format?: string
+    interaction: InteractionIdentity
     inject_button: boolean
   }) => void
   enter_message?: (params: { message: string }) => Promise<void>

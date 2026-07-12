@@ -1,11 +1,10 @@
 {
   "manifest_version": 3,
   "author": "Robert Piosik",
-  "name": "Autofill for Code Web Chat",
-  "short_name": "CWC",
-  "description": "Got tired with copy and paste? Enable prompt autofill!",
-  "version": "1.120.0",
-  "homepage_url": "https://github.com/robertpiosik/CodeWebChat",
+  "name": "Doc2WebChat Browser Bridge",
+  "short_name": "Doc2WebChat",
+  "description": "Prefill supported web chats from the local Doc2WebChat desktop app.",
+  "version": "0.1.0",
   "icons": {
     "16": "icons/icon-16.png",
     "32": "icons/icon-32.png",
@@ -13,9 +12,9 @@
     "128": "icons/icon-128.png"
   },
   "permissions": ["storage", "alarms"],
-  "host_permissions": ["http://localhost:55155/", "ws://localhost:55155/"],
+  "host_permissions": ["http://127.0.0.1:55155/*", "ws://127.0.0.1:55155/*"],
   "action": {
-    "default_title": "Autofill for Code Web Chat",
+    "default_title": "Doc2WebChat Browser Bridge",
     "default_popup": "popup.html"
   },
   "background": {
@@ -23,29 +22,7 @@
   },
   "content_scripts": [
     {
-      "matches": [
-        "https://aistudio.google.com/*",
-        "https://chatgpt.com/*",
-        "https://claude.ai/*",
-        "https://copilot.microsoft.com/",
-        "https://chat.deepseek.com/",
-        "https://www.doubao.com/chat/",
-        "https://gemini.google.com/*",
-        "https://github.com/copilot/*",
-        "https://grok.com/*",
-        "https://huggingface.co/chat/",
-        "https://arena.ai/*",
-        "https://www.kimi.com/",
-        "https://www.meta.ai/",
-        "https://chat.mistral.ai/*",
-        "http://openwebui/",
-        "https://openrouter.ai/chat*",
-        "https://chat.qwen.ai/*",
-        "https://chat.together.ai/",
-        "https://yuanbao.tencent.com/chat*",
-        "https://chat.z.ai/",
-        "http://localhost/"
-      ],
+      "matches": [],
       "js": ["send-prompt-content-script.js"]
     }
   ]
