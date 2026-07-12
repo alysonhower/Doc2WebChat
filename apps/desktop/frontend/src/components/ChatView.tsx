@@ -11,9 +11,15 @@ import type {
   ProviderSettings,
   StoredProviderSettings
 } from '../api/contracts'
-import { emptyStructuredPrompt } from '../structured/model'
+import {
+  clonePrompt,
+  emptyStructuredPrompt,
+  promptEquals
+} from '../structured/model'
 import type { StructuredPrompt } from '../structured/types'
 import { StructuredPromptEditor } from '../structured/StructuredPromptEditor'
+import { ConfirmDialog } from '../ui/ConfirmDialog'
+import { getInteractionStatusPresentation } from '../ui/status'
 import { ArrowIcon, SparkIcon } from './Icons'
 import { Conversation } from './Conversation'
 
@@ -57,6 +63,64 @@ function browserLabel(browser: BrowserRow): string {
   return `${family} · ${browser.browserInstanceId.slice(0, 8)}`
 }
 
+const normalizeInitialSettings = (
+  providers: ProviderDefinition[],
+  initialSettings: Record<string, StoredProviderSettings>,
+  initialProviderUrls: Record<string, string>
+): Record<string, ProviderSettings> =>
+  Object.fromEntries(
+    Object.entries(initialSettings).map(([id, stored]) => {
+      const definition = providers.find((candidate) => candidate.id === id)
+      const storedUrl = initialProviderUrls[id]
+      const parsedPort =
+        storedUrl && definition && hasControl(definition, 'port')
+          ? Number(new URL(storedUrl).port) || undefined
+          : undefined
+      return [
+        id,
+        {
+          model: stored.model,
+          temperature: stored.temperature,
+          topP: stored.topP ?? stored.top_p,
+          reasoningEffort: stored.reasoningEffort ?? stored.reasoning_effort,
+          thinkingBudget: stored.thinkingBudget ?? stored.thinking_budget,
+          systemInstructions:
+            stored.systemInstructions ?? stored.system_instructions,
+          urlOverride:
+            stored.urlOverride ??
+            (storedUrl &&
+            definition &&
+            hasControl(definition, 'url_override') &&
+            storedUrl !== definition.canonicalUrl
+              ? storedUrl
+              : undefined),
+          port: stored.port ?? parsedPort,
+          options: stored.options
+        }
+      ]
+    })
+  )
+
+const advancedSettingKeys: Array<keyof ProviderSettings> = [
+  'model',
+  'temperature',
+  'topP',
+  'reasoningEffort',
+  'thinkingBudget',
+  'systemInstructions',
+  'urlOverride',
+  'port',
+  'options'
+]
+
+const advancedChangeCount = (
+  current: ProviderSettings,
+  baseline: ProviderSettings
+) =>
+  advancedSettingKeys.filter(
+    (key) => JSON.stringify(current[key]) !== JSON.stringify(baseline[key])
+  ).length
+
 export function ChatView({
   documents,
   providers,
@@ -76,52 +140,32 @@ export function ChatView({
   const [instructions, setInstructions] = useState<StructuredPrompt>(
     emptyStructuredPrompt
   )
+  const [instructionBaseline, setInstructionBaseline] =
+    useState<StructuredPrompt>(() => clonePrompt(emptyStructuredPrompt()))
+  const [selectedPromptId, setSelectedPromptId] = useState('')
+  const [promptToLoad, setPromptToLoad] = useState<string | null>(null)
   const [providerId, setProviderId] = useState(
     initialProviderId ?? providers[0]?.id ?? ''
   )
   const [browserId, setBrowserId] = useState(initialBrowserId ?? '')
   const [reuseTab, setReuseTab] = useState(initialReuseTab)
+  const [settingsBaseline] = useState<Record<string, ProviderSettings>>(() =>
+    normalizeInitialSettings(providers, initialSettings, initialProviderUrls)
+  )
   const [settingsByProvider, setSettingsByProvider] = useState<
     Record<string, ProviderSettings>
   >(() =>
-    Object.fromEntries(
-      Object.entries(initialSettings).map(([id, stored]) => {
-        const definition = providers.find((candidate) => candidate.id === id)
-        const storedUrl = initialProviderUrls[id]
-        const parsedPort =
-          storedUrl && definition && hasControl(definition, 'port')
-            ? Number(new URL(storedUrl).port) || undefined
-            : undefined
-        return [
-          id,
-          {
-            model: stored.model,
-            temperature: stored.temperature,
-            topP: stored.topP ?? stored.top_p,
-            reasoningEffort: stored.reasoningEffort ?? stored.reasoning_effort,
-            thinkingBudget: stored.thinkingBudget ?? stored.thinking_budget,
-            systemInstructions:
-              stored.systemInstructions ?? stored.system_instructions,
-            urlOverride:
-              stored.urlOverride ??
-              (storedUrl &&
-              definition &&
-              hasControl(definition, 'url_override') &&
-              storedUrl !== definition.canonicalUrl
-                ? storedUrl
-                : undefined),
-            port: stored.port ?? parsedPort,
-            options: stored.options
-          }
-        ]
-      })
-    )
+    normalizeInitialSettings(providers, initialSettings, initialProviderUrls)
   )
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [dispatchInfo, setDispatchInfo] = useState<{
     interactionId: string
     promptBytes: number
+    providerId: string
+    providerLabel?: string
+    providerUrl?: string
+    createdAt: string
   } | null>(null)
   const provider = providers.find((candidate) => candidate.id === providerId)
   const settings = settingsByProvider[providerId] ?? {}
@@ -155,6 +199,16 @@ export function ChatView({
           interaction.interactionId === dispatchInfo.interactionId
       )
       if (exact) return exact
+      return {
+        interactionId: dispatchInfo.interactionId,
+        providerId: dispatchInfo.providerId,
+        providerLabel: dispatchInfo.providerLabel,
+        providerUrl: dispatchInfo.providerUrl,
+        status: 'dispatched',
+        createdAt: dispatchInfo.createdAt,
+        promptBytes: dispatchInfo.promptBytes,
+        messages: []
+      } satisfies InteractionRow
     }
     return [...history].sort(
       (a, b) =>
@@ -164,15 +218,30 @@ export function ChatView({
 
   const loadSavedPrompt = async (promptId: string) => {
     if (!promptId) return
+    setBusy(true)
     setError(null)
     try {
       const { prompt } = await invoke((api) =>
         api.load_prompt({ promptId: Number(promptId) })
       )
-      if (prompt.document) setInstructions(structuredClone(prompt.document))
+      const document = clonePrompt(prompt.document ?? emptyStructuredPrompt())
+      setInstructions(document)
+      setInstructionBaseline(clonePrompt(document))
+      setSelectedPromptId(String(prompt.id))
     } catch (reason) {
       setError(errorMessage(reason))
+    } finally {
+      setBusy(false)
     }
+  }
+
+  const requestSavedPrompt = (promptId: string) => {
+    if (!promptId || busy || promptId === selectedPromptId) return
+    if (!promptEquals(instructions, instructionBaseline)) {
+      setPromptToLoad(promptId)
+      return
+    }
+    void loadSavedPrompt(promptId)
   }
 
   const send = async () => {
@@ -223,7 +292,11 @@ export function ChatView({
       )
       setDispatchInfo({
         interactionId: result.interactionId,
-        promptBytes: result.promptBytes
+        promptBytes: result.promptBytes,
+        providerId,
+        providerLabel: provider?.label,
+        providerUrl,
+        createdAt: new Date().toISOString()
       })
       await onRefreshHistory()
     } catch (reason) {
@@ -236,7 +309,11 @@ export function ChatView({
   const readyDocuments = documents.filter(
     (document) => document.resultAvailable
   )
-  const browserRequired = connectedBrowsers.length !== 1 && !browserId
+  const selectedBrowser = connectedBrowsers.find(
+    (browser) => browser.browserInstanceId === browserId
+  )
+  const browserRequired =
+    connectedBrowsers.length !== 1 && selectedBrowser === undefined
   const modelControl = objectControl(getControl(provider, 'model'))
   const modelValues =
     modelControl.values &&
@@ -273,6 +350,21 @@ export function ChatView({
   const systemControl = objectControl(
     getControl(provider, 'system_instructions')
   )
+  const changedSettings = advancedChangeCount(
+    settings,
+    settingsBaseline[providerId] ?? {}
+  )
+  const statusPresentation = latestInteraction
+    ? getInteractionStatusPresentation(latestInteraction.status)
+    : null
+  const browserGuidance =
+    connectedBrowsers.length === 0
+      ? 'Extension offline. Open the Doc2WebChat browser extension to connect.'
+      : connectedBrowsers.length === 1
+        ? `Using ${browserLabel(connectedBrowsers[0])} automatically.`
+        : selectedBrowser
+          ? `Using ${browserLabel(selectedBrowser)}.`
+          : `Choose one of ${connectedBrowsers.length} connected browsers.`
 
   return (
     <section className="page page--chat" aria-labelledby="chat-title">
@@ -303,6 +395,7 @@ export function ChatView({
                 Provider
                 <select
                   value={providerId}
+                  disabled={busy}
                   onChange={(event) => setProviderId(event.target.value)}
                 >
                   {providers.map((item) => (
@@ -317,7 +410,7 @@ export function ChatView({
                 <select
                   value={browserId}
                   onChange={(event) => setBrowserId(event.target.value)}
-                  disabled={connectedBrowsers.length === 1}
+                  disabled={busy || connectedBrowsers.length <= 1}
                 >
                   <option value="">
                     {connectedBrowsers.length
@@ -337,8 +430,9 @@ export function ChatView({
               <label>
                 Saved prompt
                 <select
-                  defaultValue=""
-                  onChange={(event) => void loadSavedPrompt(event.target.value)}
+                  value={selectedPromptId}
+                  disabled={busy}
+                  onChange={(event) => requestSavedPrompt(event.target.value)}
                 >
                   <option value="">Load from library…</option>
                   {prompts.map((prompt) => (
@@ -355,187 +449,207 @@ export function ChatView({
                 <span>{settings.urlOverride || provider.canonicalUrl}</span>
               </p>
             ) : null}
-            <div className="provider-controls">
-              {hasControl(provider, 'model') ? (
-                <label>
-                  Model
-                  {Object.keys(modelValues).length ? (
-                    <select
-                      value={settings.model ?? ''}
+            <p className="browser-guidance">{browserGuidance}</p>
+            <details className="advanced-provider-settings">
+              <summary>
+                <span>Advanced provider settings</span>
+                {changedSettings ? (
+                  <span className="settings-change-count">
+                    {changedSettings} changed
+                  </span>
+                ) : null}
+              </summary>
+              <fieldset className="provider-controls" disabled={busy}>
+                {hasControl(provider, 'model') ? (
+                  <label>
+                    Model
+                    {Object.keys(modelValues).length ? (
+                      <select
+                        value={settings.model ?? ''}
+                        onChange={(event) =>
+                          updateSettings({
+                            model: event.target.value || undefined,
+                            reasoningEffort: undefined
+                          })
+                        }
+                      >
+                        <option value="">Provider default</option>
+                        {Object.entries(modelValues).map(
+                          ([model, definition]) => (
+                            <option key={model} value={model}>
+                              {definition.label ?? model}
+                            </option>
+                          )
+                        )}
+                      </select>
+                    ) : (
+                      <input
+                        value={settings.model ?? ''}
+                        onChange={(event) =>
+                          updateSettings({
+                            model: event.target.value || undefined
+                          })
+                        }
+                        placeholder="Provider default"
+                      />
+                    )}
+                  </label>
+                ) : null}
+                {hasControl(provider, 'temperature') ? (
+                  <label>
+                    Temperature
+                    <input
+                      type="number"
+                      min="0"
+                      max="2"
+                      step="0.1"
+                      value={settings.temperature ?? ''}
                       onChange={(event) =>
                         updateSettings({
-                          model: event.target.value,
-                          reasoningEffort: undefined
+                          temperature:
+                            event.target.value === ''
+                              ? undefined
+                              : Number(event.target.value)
+                        })
+                      }
+                    />
+                  </label>
+                ) : null}
+                {hasControl(provider, 'top_p') ? (
+                  <label>
+                    Top P
+                    <input
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={settings.topP ?? ''}
+                      onChange={(event) =>
+                        updateSettings({
+                          topP:
+                            event.target.value === ''
+                              ? undefined
+                              : Number(event.target.value)
+                        })
+                      }
+                    />
+                  </label>
+                ) : null}
+                {hasControl(provider, 'url_override') ? (
+                  <label className="provider-control--wide">
+                    {typeof urlControl.label === 'string'
+                      ? urlControl.label
+                      : 'URL override'}
+                    <input
+                      type="url"
+                      value={settings.urlOverride ?? ''}
+                      onChange={(event) =>
+                        updateSettings({
+                          urlOverride: event.target.value || undefined
+                        })
+                      }
+                      placeholder={provider?.canonicalUrl}
+                    />
+                  </label>
+                ) : null}
+                {hasControl(provider, 'port') ? (
+                  <label>
+                    Port
+                    <input
+                      type="number"
+                      min="1"
+                      max="65535"
+                      value={settings.port ?? ''}
+                      onChange={(event) =>
+                        updateSettings({
+                          port:
+                            event.target.value === ''
+                              ? undefined
+                              : Number(event.target.value)
+                        })
+                      }
+                    />
+                  </label>
+                ) : null}
+                {reasoningValues.length > 0 ? (
+                  <label>
+                    Reasoning effort
+                    <select
+                      value={settings.reasoningEffort ?? ''}
+                      onChange={(event) =>
+                        updateSettings({
+                          reasoningEffort: event.target.value || undefined
                         })
                       }
                     >
                       <option value="">Provider default</option>
-                      {Object.entries(modelValues).map(
-                        ([model, definition]) => (
-                          <option key={model} value={model}>
-                            {definition.label ?? model}
-                          </option>
-                        )
-                      )}
+                      {reasoningValues.map((value) => (
+                        <option key={value} value={value}>
+                          {value}
+                        </option>
+                      ))}
                     </select>
-                  ) : (
+                  </label>
+                ) : null}
+                {hasControl(provider, 'thinking_budget') ? (
+                  <label>
+                    Thinking budget
                     <input
-                      value={settings.model ?? ''}
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={settings.thinkingBudget ?? ''}
                       onChange={(event) =>
-                        updateSettings({ model: event.target.value })
+                        updateSettings({
+                          thinkingBudget:
+                            event.target.value === ''
+                              ? undefined
+                              : Number(event.target.value)
+                        })
                       }
-                      placeholder="Provider default"
                     />
-                  )}
-                </label>
-              ) : null}
-              {hasControl(provider, 'temperature') ? (
-                <label>
-                  Temperature
-                  <input
-                    type="number"
-                    min="0"
-                    max="2"
-                    step="0.1"
-                    value={settings.temperature ?? ''}
-                    onChange={(event) =>
-                      updateSettings({
-                        temperature:
-                          event.target.value === ''
-                            ? undefined
-                            : Number(event.target.value)
-                      })
-                    }
-                  />
-                </label>
-              ) : null}
-              {hasControl(provider, 'top_p') ? (
-                <label>
-                  Top P
-                  <input
-                    type="number"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={settings.topP ?? ''}
-                    onChange={(event) =>
-                      updateSettings({
-                        topP:
-                          event.target.value === ''
-                            ? undefined
-                            : Number(event.target.value)
-                      })
-                    }
-                  />
-                </label>
-              ) : null}
-              {hasControl(provider, 'url_override') ? (
-                <label className="provider-control--wide">
-                  {typeof urlControl.label === 'string'
-                    ? urlControl.label
-                    : 'URL override'}
-                  <input
-                    type="url"
-                    value={settings.urlOverride ?? ''}
-                    onChange={(event) =>
-                      updateSettings({ urlOverride: event.target.value })
-                    }
-                    placeholder={provider?.canonicalUrl}
-                  />
-                </label>
-              ) : null}
-              {hasControl(provider, 'port') ? (
-                <label>
-                  Port
-                  <input
-                    type="number"
-                    min="1"
-                    max="65535"
-                    value={settings.port ?? ''}
-                    onChange={(event) =>
-                      updateSettings({
-                        port:
-                          event.target.value === ''
-                            ? undefined
-                            : Number(event.target.value)
-                      })
-                    }
-                  />
-                </label>
-              ) : null}
-              {reasoningValues.length > 0 ? (
-                <label>
-                  Reasoning effort
-                  <select
-                    value={settings.reasoningEffort ?? ''}
-                    onChange={(event) =>
-                      updateSettings({ reasoningEffort: event.target.value })
-                    }
-                  >
-                    <option value="">Provider default</option>
-                    {reasoningValues.map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-              {hasControl(provider, 'thinking_budget') ? (
-                <label>
-                  Thinking budget
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={settings.thinkingBudget ?? ''}
-                    onChange={(event) =>
-                      updateSettings({
-                        thinkingBudget:
-                          event.target.value === ''
-                            ? undefined
-                            : Number(event.target.value)
-                      })
-                    }
-                  />
-                </label>
-              ) : null}
-              {optionEntries.map(([name, label]) => (
-                <label className="check-control" key={name}>
-                  <input
-                    type="checkbox"
-                    disabled={disabledOptions.has(name)}
-                    checked={settings.options?.includes(name) ?? false}
-                    onChange={(event) =>
-                      updateSettings({
-                        options: event.target.checked
+                  </label>
+                ) : null}
+                {optionEntries.map(([name, label]) => (
+                  <label className="check-control" key={name}>
+                    <input
+                      type="checkbox"
+                      disabled={disabledOptions.has(name)}
+                      checked={settings.options?.includes(name) ?? false}
+                      onChange={(event) => {
+                        const next = event.target.checked
                           ? [...(settings.options ?? []), name]
                           : (settings.options ?? []).filter(
                               (item) => item !== name
                             )
-                      })
-                    }
-                  />
-                  <span>{label}</span>
-                </label>
-              ))}
-              {hasControl(provider, 'system_instructions') ? (
-                <label className="provider-control--full">
-                  Provider system instructions
-                  <textarea
-                    value={
-                      settings.systemInstructions ??
-                      (typeof systemControl.default === 'string'
-                        ? systemControl.default
-                        : '')
-                    }
-                    onChange={(event) =>
-                      updateSettings({ systemInstructions: event.target.value })
-                    }
-                  />
-                </label>
-              ) : null}
-            </div>
+                        updateSettings({
+                          options: next.length ? next : undefined
+                        })
+                      }}
+                    />
+                    <span>{label}</span>
+                  </label>
+                ))}
+                {hasControl(provider, 'system_instructions') ? (
+                  <label className="provider-control--full">
+                    Provider system instructions
+                    <textarea
+                      value={
+                        settings.systemInstructions ??
+                        (typeof systemControl.default === 'string'
+                          ? systemControl.default
+                          : '')
+                      }
+                      onChange={(event) =>
+                        updateSettings({
+                          systemInstructions: event.target.value
+                        })
+                      }
+                    />
+                  </label>
+                ) : null}
+              </fieldset>
+            </details>
           </div>
 
           <div className="card composer-card">
@@ -572,7 +686,9 @@ export function ChatView({
             </div>
             {browserRequired ? (
               <div className="inline-alert">
-                Choose a connected browser before sending.
+                {connectedBrowsers.length
+                  ? 'Choose a connected browser before sending.'
+                  : 'Connect the Doc2WebChat browser extension before sending.'}
               </div>
             ) : null}
             {error ? (
@@ -597,14 +713,34 @@ export function ChatView({
               </div>
             </div>
             {latestInteraction ? (
-              <span className={`status status--${latestInteraction.status}`}>
-                {latestInteraction.status}
+              <span
+                className={`status status--${statusPresentation?.tone ?? 'neutral'}`}
+              >
+                {statusPresentation?.label}
               </span>
             ) : null}
           </div>
+          {statusPresentation ? (
+            <p className="interaction-guidance">
+              {statusPresentation.guidance}
+            </p>
+          ) : null}
           <Conversation interaction={latestInteraction} />
         </aside>
       </div>
+      <ConfirmDialog
+        open={promptToLoad !== null}
+        title="Replace edited instructions?"
+        description="Loading a saved prompt will replace your unsaved instruction edits."
+        confirmLabel="Load saved prompt"
+        busy={busy}
+        onCancel={() => setPromptToLoad(null)}
+        onConfirm={() => {
+          const promptId = promptToLoad
+          setPromptToLoad(null)
+          if (promptId) void loadSavedPrompt(promptId)
+        }}
+      />
     </section>
   )
 }

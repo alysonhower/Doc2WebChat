@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { errorMessage, invoke } from '../api/client'
 import type { AppEvent, DocumentRow, OcrJobState } from '../api/contracts'
+import { getOcrStatusPresentation } from '../ui/status'
 import { ArrowIcon, FolderIcon, RefreshIcon } from './Icons'
 
 interface DocumentsViewProps {
@@ -138,10 +139,16 @@ export function DocumentsView({
     : 0
   const indeterminate =
     activeJob !== null &&
-    ['discovering', 'planning', 'starting-server'].includes(activeJob.status)
+    ['pending', 'discovering', 'planning', 'starting-server'].includes(
+      activeJob.status
+    )
   const progress =
-    activeJob?.total && !indeterminate
-      ? Math.min(100, (processedCount / activeJob.total) * 100)
+    activeJob?.total !== null &&
+    activeJob?.total !== undefined &&
+    !indeterminate
+      ? activeJob.total === 0
+        ? 100
+        : Math.min(100, (processedCount / activeJob.total) * 100)
       : null
   const jobEvents = useMemo(
     () =>
@@ -161,6 +168,9 @@ export function DocumentsView({
       String(dismissedConfirmation)
       ? null
       : overwriteConfirmation
+  const jobStatus = activeJob
+    ? getOcrStatusPresentation(activeJob.status)
+    : null
   const jobFailure = useMemo(() => {
     const event = [...events]
       .reverse()
@@ -180,12 +190,18 @@ export function DocumentsView({
     activeJob?.status === 'awaiting-overwrite'
       ? 'Waiting for confirmation'
       : activeJob?.status === 'failed'
-        ? 'Failed'
+        ? 'Batch stopped'
         : activeJob?.status === 'interrupted'
-          ? 'Interrupted'
-          : progress === null
-            ? 'Working…'
-            : `${Math.round(progress)}%`
+          ? 'Batch interrupted'
+          : activeJob?.status === 'discovering'
+            ? 'Searching input folders…'
+            : activeJob?.status === 'planning'
+              ? 'Validating file plan…'
+              : activeJob?.status === 'starting-server'
+                ? 'Starting local OCR service…'
+                : progress === null
+                  ? (jobStatus?.label ?? 'Working…')
+                  : `${Math.round(progress)}%`
 
   return (
     <section className="page" aria-labelledby="documents-title">
@@ -301,8 +317,8 @@ export function DocumentsView({
               <h2>Batch progress</h2>
             </div>
             {activeJob ? (
-              <span className={`status status--${activeJob.status}`}>
-                {activeJob.status}
+              <span className={`status status--${jobStatus?.tone}`}>
+                {jobStatus?.label}
               </span>
             ) : null}
           </div>
@@ -380,6 +396,15 @@ export function DocumentsView({
                   </div>
                 </div>
               ) : null}
+              {!visibleOverwriteConfirmation && overwriteConfirmation ? (
+                <button
+                  className="button button--secondary"
+                  type="button"
+                  onClick={() => setDismissedConfirmation(null)}
+                >
+                  Review conflicts
+                </button>
+              ) : null}
               <div className="progress-summary">
                 <strong>{progressLabel}</strong>
                 <span>
@@ -395,6 +420,18 @@ export function DocumentsView({
               </div>
               <div
                 className={`progress-track ${indeterminate ? 'progress-track--indeterminate' : ''}`}
+                role="progressbar"
+                aria-label="OCR batch progress"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={
+                  progress === null ? undefined : Math.round(progress)
+                }
+                aria-valuetext={
+                  progress === null
+                    ? jobStatus?.label
+                    : `${jobStatus?.label ?? 'Processing'}: ${Math.round(progress)}%`
+                }
               >
                 <span
                   style={
@@ -429,7 +466,11 @@ export function DocumentsView({
                     <span />
                     <div>
                       <strong>
-                        {String(event.stage ?? event.status ?? event.type)}
+                        {
+                          getOcrStatusPresentation(
+                            String(event.stage ?? event.status ?? event.type)
+                          ).label
+                        }
                       </strong>
                       {event.file ? (
                         <small>{shortPath(event.file)}</small>
@@ -487,12 +528,17 @@ export function DocumentsView({
                       {document.latestError ? (
                         <em>{document.latestError}</em>
                       ) : null}
+                      {document.latestWarning ? (
+                        <em className="document-warning">
+                          {document.latestWarning}
+                        </em>
+                      ) : null}
                     </td>
                     <td>
                       <span
-                        className={`status status--${document.latestStatus}`}
+                        className={`status status--${getOcrStatusPresentation(document.latestStatus).tone}`}
                       >
-                        {document.latestStatus}
+                        {getOcrStatusPresentation(document.latestStatus).label}
                       </span>
                     </td>
                     <td>

@@ -5,6 +5,9 @@ import { afterEach } from 'vitest'
 afterEach(() => {
   cleanup()
   delete window.pywebview
+  window.localStorage.clear()
+  delete document.documentElement.dataset.theme
+  document.documentElement.style.colorScheme = ''
 })
 
 if (!globalThis.structuredClone) {

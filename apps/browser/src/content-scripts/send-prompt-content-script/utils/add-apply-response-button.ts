@@ -67,6 +67,7 @@ export function add_apply_response_button(params: {
   button.innerHTML = import_response_icon
   button.classList.add('doc2webchat-import-response-button')
   button.title = import_response_button_title
+  button.setAttribute('aria-label', import_response_button_title)
   apply_chat_response_button_style(button)
   params.customize_button?.(button)
 

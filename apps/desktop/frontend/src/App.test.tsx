@@ -1,9 +1,31 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { BootstrapState, PyWebviewApi } from './api/contracts'
 import App from './App'
 
 describe('App', () => {
+  const emptyBootstrap: BootstrapState = {
+    documents: [],
+    prompts: [],
+    browsers: [],
+    providers: [],
+    history: [],
+    preferences: {},
+    activeJob: null
+  }
+
+  function installDesktopApi(bootstrap: BootstrapState = emptyBootstrap) {
+    window.pywebview = {
+      api: {
+        get_bootstrap_state: vi.fn(async () => ({
+          ok: true as const,
+          value: bootstrap
+        })),
+        poll_events: vi.fn(() => new Promise<never>(() => undefined))
+      } as unknown as PyWebviewApi
+    }
+  }
+
   it('bootstraps through pywebview and applies sequenced OCR polling events', async () => {
     const bootstrap: BootstrapState = {
       documents: [],
@@ -57,7 +79,7 @@ describe('App', () => {
       await screen.findByRole('heading', { name: 'Documents' })
     ).toBeInTheDocument()
     expect(await screen.findByText('1 of 3 files')).toBeInTheDocument()
-    expect(screen.getByText('running')).toBeInTheDocument()
+    expect(screen.getByText('Processing')).toBeInTheDocument()
     expect(pollEvents).toHaveBeenCalledWith({ after: 0, timeoutMs: 20_000 })
   })
 
@@ -111,7 +133,7 @@ describe('App', () => {
     expect(
       await screen.findByRole('heading', { name: '1 file already exists' })
     ).toBeInTheDocument()
-    expect(screen.getByText('awaiting-overwrite')).toBeInTheDocument()
+    expect(screen.getByText('Review required')).toBeInTheDocument()
     expect(screen.getByText('Waiting for confirmation')).toBeInTheDocument()
   })
 
@@ -158,5 +180,45 @@ describe('App', () => {
     ).toBeInTheDocument()
     expect(screen.getByText('C:\\restored-output\\scan.pdf')).toBeVisible()
     expect(screen.getByText('C:\\restored-output\\letter.pdf')).toBeVisible()
+  })
+
+  it('keeps every view mounted and preserves panel scroll across navigation', async () => {
+    installDesktopApi()
+    render(<App />)
+
+    await screen.findByRole('heading', { name: 'Documents' })
+    const documents = screen.getByTestId('view-panel-documents')
+    const chat = screen.getByTestId('view-panel-chat')
+    const history = screen.getByTestId('view-panel-history')
+    const prompts = screen.getByTestId('view-panel-prompts')
+    documents.scrollTop = 147
+
+    expect(documents).not.toHaveAttribute('hidden')
+    expect(chat).toHaveAttribute('hidden')
+    expect(history).toHaveAttribute('hidden')
+    expect(prompts).toHaveAttribute('hidden')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Chat' }))
+    expect(documents).toHaveAttribute('hidden')
+    expect(chat).not.toHaveAttribute('hidden')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Documents' }))
+    expect(documents).not.toHaveAttribute('hidden')
+    expect(documents.scrollTop).toBe(147)
+  })
+
+  it('applies and persists a theme chosen from the app shell', async () => {
+    installDesktopApi()
+    render(<App />)
+
+    await screen.findByRole('heading', { name: 'Documents' })
+    fireEvent.click(screen.getByRole('button', { name: 'Dark theme' }))
+
+    expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
+    expect(window.localStorage.getItem('doc2webchat-theme')).toBe('dark')
+    expect(screen.getByRole('button', { name: 'Dark theme' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    )
   })
 })

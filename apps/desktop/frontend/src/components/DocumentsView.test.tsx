@@ -77,7 +77,13 @@ describe('DocumentsView', () => {
       />
     )
 
-    expect(screen.getByText('Working…')).toBeInTheDocument()
+    expect(screen.getByText('Starting OCR')).toBeInTheDocument()
+    const indeterminateProgress = screen.getByRole('progressbar')
+    expect(indeterminateProgress).not.toHaveAttribute('aria-valuenow')
+    expect(indeterminateProgress).toHaveAttribute(
+      'aria-valuetext',
+      'Starting OCR'
+    )
     expect(
       document.querySelector('.progress-track--indeterminate')
     ).toBeInTheDocument()
@@ -100,9 +106,37 @@ describe('DocumentsView', () => {
     )
 
     expect(screen.getByText('25%')).toBeInTheDocument()
+    expect(screen.getByRole('progressbar')).toHaveAttribute(
+      'aria-valuenow',
+      '25'
+    )
     expect(
       document.querySelector('.progress-track--indeterminate')
     ).not.toBeInTheDocument()
+  })
+
+  it('reports an empty planned batch as determinate and complete', () => {
+    render(
+      <DocumentsView
+        documents={[]}
+        events={[]}
+        activeJob={{
+          jobId: 'job-empty',
+          status: 'completed',
+          completed: 0,
+          failed: 0,
+          skipped: 0,
+          total: 0
+        }}
+        onJobStarted={vi.fn()}
+        onRefresh={vi.fn()}
+      />
+    )
+
+    expect(screen.getByRole('progressbar')).toHaveAttribute(
+      'aria-valuenow',
+      '100'
+    )
   })
 
   it('asks before overwriting conflicts and retries with event metadata', async () => {
@@ -229,6 +263,9 @@ describe('DocumentsView', () => {
 
     await user.click(screen.getByRole('button', { name: 'Not now' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Review conflicts' }))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Not now' }))
 
     await user.click(
       screen.getByRole('button', { name: /select source folder/i })
@@ -280,5 +317,31 @@ describe('DocumentsView', () => {
     expect(
       document.querySelector('.progress-track--indeterminate')
     ).not.toBeInTheDocument()
+  })
+
+  it('uses friendly document statuses and shows recorded warnings', () => {
+    render(
+      <DocumentsView
+        documents={[
+          {
+            id: 4,
+            inputPath: 'C:\\source\\scan.pdf',
+            resultAvailable: true,
+            text: 'searchable',
+            latestStatus: 'completed-with-errors',
+            latestWarning: 'Text extraction omitted one blank page.'
+          }
+        ]}
+        events={[]}
+        activeJob={null}
+        onJobStarted={vi.fn()}
+        onRefresh={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('Completed with issues')).toBeInTheDocument()
+    expect(
+      screen.getByText('Text extraction omitted one blank page.')
+    ).toBeInTheDocument()
   })
 })
