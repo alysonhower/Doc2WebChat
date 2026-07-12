@@ -1,4 +1,4 @@
-import { Logger } from '@shared/utils/logger'
+import { Logger } from '@/utils/logger'
 
 export const report_initialization_error = (params: {
   function_name: string
@@ -8,4 +8,5 @@ export const report_initialization_error = (params: {
     function_name: params.function_name,
     message: params.log_message
   })
+  throw new Error('PROVIDER_CONTROL_UNAVAILABLE')
 }

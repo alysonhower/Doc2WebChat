@@ -1,5 +1,0 @@
-src
-.gitignore
-tsconfig.json
-__mocks__
-jest.config.js

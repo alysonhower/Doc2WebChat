@@ -1,6 +1,0 @@
-/* Header */
-/* License */
-function main() {
-  console.log("welcome");
-}
-// EOF

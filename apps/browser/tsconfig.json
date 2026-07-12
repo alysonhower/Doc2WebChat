@@ -6,19 +6,15 @@
     "outDir": "out",
     "sourceMap": true,
     "esModuleInterop": true,
+    "resolveJsonModule": true,
     "baseUrl": ".",
     "strict": true,
     "jsx": "react-jsx",
     "types": ["chrome", "webextension-polyfill", "node", "jest"],
     "paths": {
       "@/*": ["./src/*"],
-      "@shared/*": ["../../packages/shared/src/*"],
-      "@ui/*": ["../../packages/ui/src/*"]
+      "@shared/*": ["../../packages/shared/src/*"]
     }
   },
-  "include": [
-    "src/**/*",
-    "../../packages/shared/src/**/*",
-    "../../packages/ui/src/**/*"
-  ]
+  "include": ["src/**/*"]
 }

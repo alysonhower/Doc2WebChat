@@ -4,6 +4,7 @@ import {
   observe_for_responses
 } from '../utils/add-apply-response-button'
 import { report_initialization_error } from '../utils/report-initialization-error'
+import { prefill_message } from '../utils/prefill-message'
 
 export const github_copilot: Chatbot = {
   wait_until_ready: async () => {
@@ -29,16 +30,12 @@ export const github_copilot: Chatbot = {
       })
       return
     }
-    input_element.value = params.message
-    input_element.dispatchEvent(new Event('input', { bubbles: true }))
-    input_element.focus()
+    prefill_message(input_element, params.message, 'value')
   },
   setup_observer: (params) => {
     const add_buttons = (footer: Element) => {
       add_apply_response_button({
-        client_id: params.client_id,
-        raw_instructions: params.raw_instructions,
-        edit_format: params.edit_format,
+        interaction: params.interaction,
         footer,
         get_chat_turn: (f) => f.closest('div.message-container') as HTMLElement,
         perform_copy: (f) => {
@@ -59,6 +56,7 @@ export const github_copilot: Chatbot = {
     }
 
     observe_for_responses({
+      interaction: params.interaction,
       chatbot_name: 'GitHub Copilot',
       is_generating: () =>
         !!document.querySelector(

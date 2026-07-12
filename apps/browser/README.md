@@ -1,18 +1,30 @@
-# Autofill for Code Web Chat
+# Doc2WebChat Browser Bridge
 
-This extension exchanges messages with a locally run WebSockets server to open new tabs and autofill prompts.
+This Chrome/Firefox extension connects supported provider pages to the local
+Doc2WebChat desktop application. It prefills the selected provider without
+submitting, observes only the next response, invokes the provider's native Copy
+control, and notifies the desktop app to import the clipboard result.
 
-It also places "APPLY RESPONSE" button under messages. It's an alias for the _copy to clipboard_ button.
+The bridge connects only to `127.0.0.1:55155`. Complete prompts are fetched from
+an authenticated, expiring desktop handoff and are never written to extension
+storage. Stored handoff records contain only opaque/correlation IDs, provider
+ID, tab metadata, and expiry.
 
-## Permissions
+Provider metadata lives in `packages/shared/src/providers.json`; the build
+generates Chrome and Firefox content-script matches from that registry.
 
-The extension requests a minimal set of permissions.
+## Development
 
-- `storage` - Used to temporarily store prompts for [a content script](https://github.com/robertpiosik/CodeWebChat/tree/dev/apps/browser/src/content-scripts/send-prompt-content-script), and to save extension settings.
-- `alarms` (Chrome only) - Used to implement a keep-alive mechanism for the background service worker to ensure the WebSocket connection stays active.
-- `host_permissions` (localhost) - Required to connect to the local WebSocket server (`ws://localhost:55155`), managed by the VS Code extension.
+```sh
+pnpm --dir apps/browser test
+pnpm --dir apps/browser lint
+pnpm --dir apps/browser typecheck
+pnpm --dir apps/browser build
+pnpm --dir apps/browser test:e2e
+```
 
-Firefox only:
+## Provenance
 
-- `contextualIdentities` - Required for Firefox Containers support.
-- `cookies` (optional) - Required for Firefox Containers support.
+The provider DOM adapters were derived from the upstream browser autofill
+extension identified in the repository's third-party notices. Its license and
+copyright notice remain in [LICENSE](LICENSE).

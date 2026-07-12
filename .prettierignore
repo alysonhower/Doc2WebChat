@@ -1,0 +1,10 @@
+.codegraph/
+**/.pytest_cache/
+**/.ruff_cache/
+**/.venv/
+**/__pycache__/
+**/dist/
+**/dist-firefox/
+apps/desktop/src/doc2webchat/ui/
+pnpm-lock.yaml
+LICENSES/

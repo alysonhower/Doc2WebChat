@@ -1,11 +1,13 @@
 import browser from 'webextension-polyfill'
-import { Message } from '@/types/messages'
+import { ContentInteractionMessage } from '@/types/messages'
 import { Chatbot } from '../types/chatbot'
 import { CHATBOTS } from '@shared/constants/chatbots'
 import { show_response_ready_notification } from '../utils/show-response-ready-notification'
 import { add_apply_response_button } from '../utils/add-apply-response-button'
 import { report_initialization_error } from '../utils/report-initialization-error'
-import { default_system_instructions } from '@shared/constants/default-system-instructions'
+import { prefill_message } from '../utils/prefill-message'
+
+const SHOULD_HIDE_PANEL_KEY = 'doc2webchat:should-hide-panel'
 
 export const ai_studio: Chatbot = {
   wait_until_ready: async () => {
@@ -34,7 +36,9 @@ export const ai_studio: Chatbot = {
   },
   enter_system_instructions: async (chat) => {
     const system_instructions =
-      chat.system_instructions || default_system_instructions
+      chat.system_instructions ||
+      CHATBOTS['AI Studio'].default_system_instructions ||
+      ''
     await open_panel()
     const system_instructions_button = document.querySelector(
       'button[data-test-system-instructions-card]'
@@ -105,7 +109,7 @@ export const ai_studio: Chatbot = {
     const supported_options = CHATBOTS['AI Studio'].supported_options
 
     if (options.includes('hide-panel') && supported_options?.['hide-panel']) {
-      sessionStorage.setItem('should-hide-panel', 'true')
+      sessionStorage.setItem(SHOULD_HIDE_PANEL_KEY, 'true')
     }
 
     if (supported_options?.['grounding-with-google-search']) {
@@ -314,8 +318,7 @@ export const ai_studio: Chatbot = {
       })
       return
     }
-    input_element.value = params.message
-    input_element.dispatchEvent(new Event('input', { bubbles: true }))
+    prefill_message(input_element, params.message, 'value')
     await new Promise((r) => requestAnimationFrame(r))
     await new Promise((resolve) => {
       const check = () => {
@@ -335,11 +338,13 @@ export const ai_studio: Chatbot = {
     await close_panel()
   },
   setup_observer: (params) => {
+    const footer_selector = 'ms-chat-turn .turn-footer'
+    const baseline = new Set(
+      Array.from(document.querySelectorAll(footer_selector))
+    )
     const add_buttons = (footer: Element) => {
       add_apply_response_button({
-        client_id: params.client_id,
-        raw_instructions: params.raw_instructions,
-        edit_format: params.edit_format,
+        interaction: params.interaction,
         footer,
         get_chat_turn: (f) => f.closest('ms-chat-turn'),
         perform_copy: (f) => {
@@ -387,29 +392,28 @@ export const ai_studio: Chatbot = {
     const observer = new MutationObserver(() => {
       clearTimeout(debounce_timer)
       debounce_timer = setTimeout(() => {
-        const all_footers = document.querySelectorAll(
-          'ms-chat-turn .turn-footer'
-        )
-        all_footers.forEach((footer) => {
+        const all_footers = document.querySelectorAll(footer_selector)
+        for (const footer of Array.from(all_footers)) {
+          if (baseline.has(footer)) continue
           const has_thumb_up =
             footer.querySelector('button[iconname="thumb_up"]') ||
             Array.from(footer.querySelectorAll('button span')).some(
               (span) => span.textContent?.trim() == 'thumb_up'
             )
           if (has_thumb_up) {
-            const has_been_processed = footer.hasAttribute('data-cwc-processed')
-            if (!has_been_processed) {
-              browser.runtime.sendMessage<Message>({
-                action: 'finished-responding'
-              })
-              show_response_ready_notification({ chatbot_name: 'AI Studio' })
-              footer.setAttribute('data-cwc-processed', 'true')
-            }
             if (params.inject_button) {
               add_buttons(footer)
             }
+            browser.runtime.sendMessage<ContentInteractionMessage>({
+              ...params.interaction,
+              action: 'response-finished'
+            })
+            show_response_ready_notification({ chatbot_name: 'AI Studio' })
+            observer.disconnect()
+            clearTimeout(debounce_timer)
+            break
           }
-        })
+        }
       }, 100)
     })
 
@@ -456,7 +460,7 @@ const close_panel = async () => {
     }
     close_button.click()
   } else {
-    if (sessionStorage.getItem('should-hide-panel') == 'true') {
+    if (sessionStorage.getItem(SHOULD_HIDE_PANEL_KEY) == 'true') {
       const close_button = document.querySelector(
         'ms-run-settings button[iconname="close"]'
       ) as HTMLButtonElement

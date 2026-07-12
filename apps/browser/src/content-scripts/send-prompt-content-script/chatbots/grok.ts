@@ -5,6 +5,7 @@ import {
   observe_for_responses
 } from '../utils/add-apply-response-button'
 import { report_initialization_error } from '../utils/report-initialization-error'
+import { prefill_message } from '../utils/prefill-message'
 
 export const grok: Chatbot = {
   wait_until_ready: async () => {
@@ -52,16 +53,12 @@ export const grok: Chatbot = {
       return
     }
 
-    input_element.textContent = params.message
-    input_element.dispatchEvent(new Event('input', { bubbles: true }))
-    input_element.focus()
+    prefill_message(input_element, params.message, 'textContent')
   },
   setup_observer: (params) => {
     const add_buttons = (footer: Element) => {
       add_apply_response_button({
-        client_id: params.client_id,
-        raw_instructions: params.raw_instructions,
-        edit_format: params.edit_format,
+        interaction: params.interaction,
         footer,
         get_chat_turn: (f) => f.closest('.items-start'),
         perform_copy: (f) => {
@@ -83,6 +80,7 @@ export const grok: Chatbot = {
     }
 
     observe_for_responses({
+      interaction: params.interaction,
       chatbot_name: 'Grok',
       is_generating: () =>
         !!document.querySelector(

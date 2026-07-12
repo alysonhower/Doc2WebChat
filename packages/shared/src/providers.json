@@ -1,0 +1,457 @@
+{
+  "schema_version": 1,
+  "providers": [
+    {
+      "id": "ai-studio",
+      "label": "AI Studio",
+      "adapter_key": "ai_studio",
+      "canonical_url": "https://aistudio.google.com/prompts/new_chat",
+      "allowed_url_prefixes": ["https://aistudio.google.com/"],
+      "manifest_matches": ["https://aistudio.google.com/*"],
+      "detection": { "url_prefixes": ["https://aistudio.google.com/"] },
+      "controls": {
+        "model": {
+          "values": {
+            "gemini-3.5-flash": {
+              "label": "Gemini 3.5 Flash",
+              "reasoning_efforts": ["Minimal", "Low", "Medium", "High"]
+            },
+            "gemini-3.1-pro-preview": {
+              "label": "Gemini 3.1 Pro Preview",
+              "reasoning_efforts": ["Low", "Medium", "High"]
+            },
+            "gemini-3.1-flash-lite": {
+              "label": "Gemini 3.1 Flash Lite",
+              "reasoning_efforts": ["Minimal", "Low", "Medium", "High"]
+            }
+          }
+        },
+        "temperature": true,
+        "top_p": true,
+        "system_instructions": {
+          "default": "You're a helpful document assistant."
+        },
+        "thinking_budget": true,
+        "options": {
+          "hide-panel": "Hide panel",
+          "grounding-with-google-search": "Grounding with Google Search",
+          "url-context": "URL context"
+        }
+      },
+      "dom_controls": [
+        "wait_until_ready",
+        "system_instructions",
+        "options",
+        "temperature",
+        "reasoning_effort",
+        "thinking_budget",
+        "top_p",
+        "message",
+        "response_observer",
+        "native_copy"
+      ]
+    },
+    {
+      "id": "arena",
+      "label": "Arena",
+      "adapter_key": "arena",
+      "canonical_url": "https://arena.ai/",
+      "allowed_url_prefixes": ["https://arena.ai/"],
+      "manifest_matches": ["https://arena.ai/*"],
+      "detection": { "url_prefixes": ["https://arena.ai/"] },
+      "controls": { "model": { "user_provided": true } },
+      "dom_controls": [
+        "wait_until_ready",
+        "message",
+        "response_observer",
+        "native_copy"
+      ]
+    },
+    {
+      "id": "chatgpt",
+      "label": "ChatGPT",
+      "adapter_key": "chatgpt",
+      "canonical_url": "https://chatgpt.com/",
+      "allowed_url_prefixes": ["https://chatgpt.com/"],
+      "manifest_matches": ["https://chatgpt.com/*"],
+      "detection": { "url_prefixes": ["https://chatgpt.com/"] },
+      "controls": {
+        "url_override": {
+          "label": "Project URL",
+          "disabled_options": ["temporary"]
+        },
+        "options": {
+          "temporary": "Temporary",
+          "thinking": "Thinking (free plans)"
+        }
+      },
+      "dom_controls": [
+        "wait_until_ready",
+        "options",
+        "message",
+        "response_observer",
+        "native_copy"
+      ]
+    },
+    {
+      "id": "claude",
+      "label": "Claude",
+      "adapter_key": "claude",
+      "canonical_url": "https://claude.ai/new",
+      "allowed_url_prefixes": ["https://claude.ai/"],
+      "manifest_matches": ["https://claude.ai/*"],
+      "detection": { "url_prefixes": ["https://claude.ai/"] },
+      "controls": {
+        "url_override": {
+          "label": "Project URL",
+          "disabled_options": ["incognito-chat"]
+        },
+        "options": { "incognito-chat": "Incognito chat" }
+      },
+      "dom_controls": [
+        "wait_until_ready",
+        "options",
+        "message",
+        "response_observer",
+        "native_copy"
+      ]
+    },
+    {
+      "id": "copilot",
+      "label": "Copilot",
+      "adapter_key": "copilot",
+      "canonical_url": "https://copilot.microsoft.com/",
+      "allowed_url_prefixes": ["https://copilot.microsoft.com/"],
+      "manifest_matches": ["https://copilot.microsoft.com/"],
+      "detection": { "url_prefixes": ["https://copilot.microsoft.com/"] },
+      "controls": {},
+      "dom_controls": [
+        "wait_until_ready",
+        "message",
+        "response_observer",
+        "native_copy"
+      ]
+    },
+    {
+      "id": "deepseek",
+      "label": "DeepSeek",
+      "adapter_key": "deepseek",
+      "canonical_url": "https://chat.deepseek.com/",
+      "allowed_url_prefixes": ["https://chat.deepseek.com/"],
+      "manifest_matches": ["https://chat.deepseek.com/"],
+      "detection": { "url_prefixes": ["https://chat.deepseek.com/"] },
+      "controls": {
+        "options": { "deep-think": "DeepThink", "search": "Search" }
+      },
+      "dom_controls": ["options", "message", "response_observer", "native_copy"]
+    },
+    {
+      "id": "doubao",
+      "label": "Doubao",
+      "adapter_key": "doubao",
+      "canonical_url": "https://www.doubao.com/chat/",
+      "allowed_url_prefixes": ["https://www.doubao.com/chat/"],
+      "manifest_matches": ["https://www.doubao.com/chat/"],
+      "detection": { "url_prefixes": ["https://www.doubao.com/chat/"] },
+      "controls": { "options": { "deep-thinking": "Deep Thinking" } },
+      "dom_controls": [
+        "wait_until_ready",
+        "options",
+        "message",
+        "response_observer",
+        "native_copy"
+      ]
+    },
+    {
+      "id": "gemini",
+      "label": "Gemini",
+      "adapter_key": "gemini",
+      "canonical_url": "https://gemini.google.com/app",
+      "allowed_url_prefixes": ["https://gemini.google.com/"],
+      "manifest_matches": ["https://gemini.google.com/*"],
+      "detection": { "url_prefixes": ["https://gemini.google.com/"] },
+      "controls": {
+        "model": {
+          "values": {
+            "flash-lite": { "label": "Flash-Lite" },
+            "flash": { "label": "Flash" },
+            "pro": { "label": "Pro" }
+          }
+        },
+        "reasoning_effort": { "values": ["Standard", "Extended"] },
+        "url_override": {
+          "label": "Gem URL",
+          "disabled_options": ["temporary-chat"]
+        },
+        "options": { "temporary-chat": "Temporary chat" }
+      },
+      "dom_controls": [
+        "wait_until_ready",
+        "model",
+        "reasoning_effort",
+        "options",
+        "message",
+        "response_observer",
+        "native_copy"
+      ]
+    },
+    {
+      "id": "github-copilot",
+      "label": "GitHub Copilot",
+      "adapter_key": "github_copilot",
+      "canonical_url": "https://github.com/copilot",
+      "allowed_url_prefixes": ["https://github.com/copilot"],
+      "manifest_matches": ["https://github.com/copilot/*"],
+      "detection": { "url_prefixes": ["https://github.com/copilot"] },
+      "controls": { "url_override": { "label": "Space URL" } },
+      "dom_controls": [
+        "wait_until_ready",
+        "message",
+        "response_observer",
+        "native_copy"
+      ]
+    },
+    {
+      "id": "grok",
+      "label": "Grok",
+      "adapter_key": "grok",
+      "canonical_url": "https://grok.com/",
+      "allowed_url_prefixes": ["https://grok.com/"],
+      "manifest_matches": ["https://grok.com/*"],
+      "detection": { "url_prefixes": ["https://grok.com/"] },
+      "controls": {
+        "url_override": {
+          "label": "Project URL",
+          "disabled_options": ["private"]
+        },
+        "options": { "private": "Private" }
+      },
+      "dom_controls": [
+        "wait_until_ready",
+        "options",
+        "message",
+        "response_observer",
+        "native_copy"
+      ]
+    },
+    {
+      "id": "hugging-chat",
+      "label": "HuggingChat",
+      "adapter_key": "hugging_chat",
+      "canonical_url": "https://huggingface.co/chat/",
+      "allowed_url_prefixes": ["https://huggingface.co/chat/"],
+      "manifest_matches": ["https://huggingface.co/chat/"],
+      "detection": { "url_prefixes": ["https://huggingface.co/chat/"] },
+      "controls": { "model": { "user_provided": true } },
+      "dom_controls": [
+        "wait_until_ready",
+        "model",
+        "message",
+        "response_observer",
+        "native_copy"
+      ]
+    },
+    {
+      "id": "kimi",
+      "label": "Kimi",
+      "adapter_key": "kimi",
+      "canonical_url": "https://www.kimi.com/",
+      "allowed_url_prefixes": ["https://www.kimi.com/"],
+      "manifest_matches": ["https://www.kimi.com/"],
+      "detection": { "url_prefixes": ["https://www.kimi.com/"] },
+      "controls": {},
+      "dom_controls": [
+        "wait_until_ready",
+        "message",
+        "response_observer",
+        "native_copy"
+      ]
+    },
+    {
+      "id": "meta-ai",
+      "label": "Meta AI",
+      "adapter_key": "meta",
+      "canonical_url": "https://www.meta.ai/",
+      "allowed_url_prefixes": ["https://www.meta.ai/"],
+      "manifest_matches": ["https://www.meta.ai/"],
+      "detection": { "url_prefixes": ["https://www.meta.ai/"] },
+      "controls": {},
+      "dom_controls": [
+        "wait_until_ready",
+        "message",
+        "response_observer",
+        "native_copy"
+      ]
+    },
+    {
+      "id": "mistral",
+      "label": "Mistral",
+      "adapter_key": "mistral",
+      "canonical_url": "https://chat.mistral.ai/chat",
+      "allowed_url_prefixes": ["https://chat.mistral.ai/"],
+      "manifest_matches": ["https://chat.mistral.ai/*"],
+      "detection": { "url_prefixes": ["https://chat.mistral.ai/"] },
+      "controls": {
+        "url_override": {
+          "label": "Project URL",
+          "disabled_options": ["incognito"]
+        },
+        "options": { "incognito": "Incognito mode", "think": "Think" }
+      },
+      "dom_controls": [
+        "wait_until_ready",
+        "options",
+        "message",
+        "response_observer",
+        "native_copy"
+      ]
+    },
+    {
+      "id": "open-webui",
+      "label": "Open WebUI",
+      "adapter_key": "open_webui",
+      "canonical_url": "http://openwebui/",
+      "allowed_url_prefixes": [
+        "http://openwebui/",
+        "http://localhost/",
+        "http://localhost:",
+        "http://127.0.0.1/",
+        "http://127.0.0.1:"
+      ],
+      "manifest_matches": [
+        "http://openwebui/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "detection": { "title_includes": "Open WebUI" },
+      "controls": {
+        "model": { "user_provided": true },
+        "temperature": true,
+        "top_p": true,
+        "system_instructions": {
+          "default": "You're a helpful document assistant."
+        },
+        "port": true
+      },
+      "dom_controls": [
+        "wait_until_ready",
+        "system_instructions",
+        "temperature",
+        "top_p",
+        "model",
+        "message",
+        "response_observer",
+        "native_copy"
+      ]
+    },
+    {
+      "id": "openrouter",
+      "label": "OpenRouter",
+      "adapter_key": "openrouter",
+      "canonical_url": "https://openrouter.ai/chat",
+      "allowed_url_prefixes": ["https://openrouter.ai/chat"],
+      "manifest_matches": ["https://openrouter.ai/chat*"],
+      "detection": { "url_prefixes": ["https://openrouter.ai/chat"] },
+      "controls": {
+        "model": { "user_provided": true },
+        "temperature": true,
+        "top_p": true,
+        "system_instructions": {
+          "default": "You're a helpful document assistant."
+        },
+        "reasoning_effort": {
+          "values": ["None", "Minimal", "Low", "Medium", "High", "XHigh", "Max"]
+        },
+        "options": {
+          "disable-reasoning": "Disable reasoning (for hybrid models)"
+        }
+      },
+      "dom_controls": [
+        "wait_until_ready",
+        "system_instructions",
+        "options",
+        "temperature",
+        "top_p",
+        "reasoning_effort",
+        "message",
+        "response_observer",
+        "native_copy"
+      ]
+    },
+    {
+      "id": "qwen",
+      "label": "Qwen",
+      "adapter_key": "qwen",
+      "canonical_url": "https://chat.qwen.ai/",
+      "allowed_url_prefixes": ["https://chat.qwen.ai/"],
+      "manifest_matches": ["https://chat.qwen.ai/*"],
+      "detection": { "url_prefixes": ["https://chat.qwen.ai/"] },
+      "controls": {
+        "url_override": { "label": "Project URL" },
+        "options": {
+          "thinking": "Thinking",
+          "search": "Search",
+          "temporary": "Temporary"
+        }
+      },
+      "dom_controls": [
+        "wait_until_ready",
+        "model",
+        "options",
+        "message",
+        "response_observer",
+        "native_copy"
+      ]
+    },
+    {
+      "id": "together",
+      "label": "Together",
+      "adapter_key": "together",
+      "canonical_url": "https://chat.together.ai/",
+      "allowed_url_prefixes": ["https://chat.together.ai/"],
+      "manifest_matches": ["https://chat.together.ai/"],
+      "detection": { "url_prefixes": ["https://chat.together.ai/"] },
+      "controls": {},
+      "dom_controls": [
+        "wait_until_ready",
+        "model",
+        "message",
+        "response_observer",
+        "native_copy"
+      ]
+    },
+    {
+      "id": "yuanbao",
+      "label": "Yuanbao",
+      "adapter_key": "yuanbao",
+      "canonical_url": "https://yuanbao.tencent.com/chat",
+      "allowed_url_prefixes": ["https://yuanbao.tencent.com/chat"],
+      "manifest_matches": ["https://yuanbao.tencent.com/chat*"],
+      "detection": { "url_prefixes": ["https://yuanbao.tencent.com/chat"] },
+      "controls": {},
+      "dom_controls": [
+        "wait_until_ready",
+        "message",
+        "response_observer",
+        "native_copy"
+      ]
+    },
+    {
+      "id": "z-ai",
+      "label": "Z.AI",
+      "adapter_key": "z_ai",
+      "canonical_url": "https://chat.z.ai/",
+      "allowed_url_prefixes": ["https://chat.z.ai/"],
+      "manifest_matches": ["https://chat.z.ai/"],
+      "detection": { "url_prefixes": ["https://chat.z.ai/"] },
+      "controls": { "options": { "deep-think": "Deep Think" } },
+      "dom_controls": [
+        "wait_until_ready",
+        "options",
+        "message",
+        "response_observer",
+        "native_copy"
+      ]
+    }
+  ]
+}

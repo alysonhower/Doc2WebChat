@@ -1,0 +1,52 @@
+[project]
+name = "doc2webchat-desktop"
+version = "0.1.0"
+description = "Local Doc2WebChat desktop application"
+requires-python = ">=3.14"
+dependencies = [
+  "aiohttp>=3.12,<4",
+  "platformdirs>=4.3,<5",
+  "pydantic>=2.11,<3",
+  "pypdf>=5.9,<6",
+  "pywebview>=6,<7",
+  "turboocr[pdfa] @ git+https://github.com/alysonhower/TurboOCR-python.git@9087968a18eed4efead82bbaa0fdcf63e66d35a3",
+]
+
+[project.scripts]
+doc2webchat = "doc2webchat.app:main"
+
+[dependency-groups]
+dev = [
+  "basedpyright>=1.31",
+  "pytest>=8.4,<9",
+  "pytest-asyncio>=1.1,<2",
+  "ruff>=0.12",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/doc2webchat"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 88
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.basedpyright]
+pythonVersion = "3.14"
+typeCheckingMode = "standard"
+include = ["src"]

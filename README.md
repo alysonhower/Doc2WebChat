@@ -1,213 +1,59 @@
-<p align="center" title="Code Web Chat">
-  <a href="https://codeweb.chat">
-    <picture>
-      <source srcset="https://github.com/robertpiosik/CodeWebChat/raw/HEAD/media/readme-heading-dark.svg" media="(prefers-color-scheme: dark)">
-      <source srcset="https://github.com/robertpiosik/CodeWebChat/raw/HEAD/media/readme-heading-light.svg" media="(prefers-color-scheme: light)">
-      <img alt="Logo" width="680" src="https://github.com/robertpiosik/CodeWebChat/raw/HEAD/media/readme-heading-light.svg">
-    </picture>
-  </a>
-</p>
-<p align="center">
-  <a href="https://marketplace.visualstudio.com/items?itemName=robertpiosik.gemini-coder"><img src="https://img.shields.io/badge/Install-VS_Code_Marketplace-blue" alt="Get from Visual Studio Code Marketplace" /></a> <a href="https://open-vsx.org/extension/robertpiosik/gemini-coder"><img src="https://img.shields.io/badge/Install-Open_VSX_Registry-a60ee5" alt="Get from Open VSX Registry" /></a> 
-</p>
+# Doc2WebChat
 
-Code Web Chat (CWC) is a chatbot-first AI coding tool. **Start in VS Code (Cursor, Antigravity, VSCodium, etc.), then continue in ChatGPT, Gemini, Claude, etc.** or _Bring Your Own Key_ to stay in the editor!
+Doc2WebChat is a local pywebview desktop application for turning image and PDF
+folders into searchable PDF/A-4 files, keeping their OCR text in SQLite, and
+prefilling supported AI chat websites through a browser extension. It never
+calls a model API and never submits a provider message for the user.
 
-It's free, token-efficient and doesn't collect telemetry.
+## Requirements
 
-Get involved! Join our [discord server](https://discord.gg/KJySXsrSX5).
+- Python 3.14 and [uv](https://docs.astral.sh/uv/)
+- Node.js and pnpm 10.10.0
+- Docker Desktop for the managed TurboOCR service
+- Chrome or Firefox with the locally built Doc2WebChat extension installed
 
-> [!TIP]
-> Elevate your workflow with smart workspaces (called [projects](https://help.openai.com/en/articles/10169521-projects-in-chatgpt), [gems](https://gemini.google/pl/overview/gems), or [spaces](https://docs.github.com/en/copilot/concepts/context/spaces)).
+## Build and run
 
-<br/>
-
-<p align="center"><i>Select context files, type instructions...</i></p>
-
-<p align="center"><img src="https://github.com/robertpiosik/CodeWebChat/raw/HEAD/media/screenshot-1.png"></p>
-
-<br/>
-
-<p align="center"><i>Paste in a chatbot...</i></p>
-
-<p align="center"><img src="https://github.com/robertpiosik/CodeWebChat/raw/HEAD/media/screenshot-2.png"></p>
-
-<br/>
-
-<p align="center"><i>Review edits in the editor...</i></p>
-
-<p align="center"><img src="https://github.com/robertpiosik/CodeWebChat/raw/HEAD/media/screenshot-3.png"></p>
-
-## Introduction
-
-In the world of AI coding, agents like Codex or Claude Code rely on "tool calling" (where the AI asks "the harness" to read a file, waits for the tool to respond, then reads another).
-
-CWC flips this!
-
-Here, selected in the explorer view files are sent to the model with your instructions so it has everything it needs to do the task. Get accurate multi-file edits in record time!
-
-> [!TIP]
-> **Not sure what files to select?** You can search files using phrase, keywords or **natural language** globally or within the selected folder.
-
-**Generated prompts are structured as follows:**
-
-<details>
-<summary>Edit context</summary>
-
-```
-# Files
-[file selection]
-
-# System
-[edit format instructions]
-
----
-
-[prompt]
+```powershell
+pnpm install --frozen-lockfile
+pnpm build:desktop
+pnpm build:browser
+uv sync --project .\apps\desktop --locked
+uv run --project .\apps\desktop doc2webchat
 ```
 
-</details>
+Load `apps\browser\dist` as an unpacked Chrome extension. For Firefox, load
+`apps\browser\dist-firefox\manifest.json` as a temporary add-on during local
+development. Provider pages open in the ordinary browser and retain its normal
+login session.
 
-<details>
-<summary>Ask about context</summary>
+## Workflow
 
-```
-# Files
-[file selection]
+1. Choose separate input and output folders, recursion, and an output-conflict
+   policy in **Documents/OCR**.
+2. Run OCR and follow per-file progress. Successful files are published as
+   PDF/A-4 and become searchable chat documents.
+3. Create or select structured instructions in **Prompt Library** or **Chat**.
+4. Select a connected browser and provider, then prefill the complete prompt.
+5. Review and submit it yourself in the provider page.
+6. Use the injected Doc2WebChat import button on the next assistant response.
+   The extension invokes the provider's native Copy action and the desktop app
+   imports the clipboard text into local history.
 
-[prompt]
-```
+## Verification
 
-</details>
-
-<details>
-<summary>Code at cursor</summary>
-
-````
-# Files
-[file selection]
-
-### File: `[active file]`
-```
-[code before cursor]<missing_text>[prompt]</missing_text>[code after cursor]
-```
-
-[instructions for the missing text]
-````
-
-</details>
-
-<details>
-<summary>Find relevant files</summary>
-
-```
-# Files
-[rough file selection]
-
-# System
-[response format instructions]
-
-Find a complete set of relevant files according to the following query:
-
----
-
-[prompt]
+```powershell
+pnpm check
+pnpm test:e2e
+uv run --directory .\apps\desktop pytest
+uv run --directory .\apps\desktop ruff check src tests
+uv run --directory .\apps\desktop basedpyright
 ```
 
-</details>
+`pnpm test:e2e` builds the unpacked Chrome extension and runs the real
+Python-to-extension-to-clipboard round trip against a local Open WebUI-shaped
+fixture in a fresh temporary Chromium profile.
 
-## Enabling autofill
-
-Install the [browser extension](https://github.com/robertpiosik/CodeWebChat/tree/dev/apps/browser) and never copy and paste again.
-
-- [Chrome Web Store](https://chromewebstore.google.com/detail/autofill-for-code-web-chat/ljookipcanaglfaocjbgdicfbdhhjffp)
-- [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/autofill-for-code-web-chat/)
-
-**Supported chatbots:**
-
-- AI Studio
-- Arena
-- ChatGPT
-- Claude
-- Copilot
-- DeepSeek
-- Doubao
-- Gemini
-- GitHub Copilot
-- Grok
-- HuggingChat
-- Kimi
-- Meta
-- Mistral
-- Open WebUI
-- OpenRouter
-- Qwen
-- Together
-- Yuanbao
-- Z
-
-> [!IMPORTANT]
-> The _Apply response_ button placed under responses is not a means of automatic output extraction, it's an alias for the original _copy to clipboard_ button. Review the [content script](https://github.com/robertpiosik/CodeWebChat/blob/dev/apps/browser/src/content-scripts/send-prompt-content-script/send-prompt-content-script.ts) to learn about implementation details.
-
-> [!NOTE]
-> Use [forwarding](https://code.visualstudio.com/docs/debugtest/port-forwarding) of port _55155_ when using remote machine via SSH.
-
-## Prompt caching
-
-**CWC orders context files by modification and selection recency.** This, combined with instructions placement at the message's very end creates highly cost-efficient workflow which heavily utilize [prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching).
-
-Make your chatbot quota last longer, lower input token costs by up to 90%, and reduce latency by up to 80%.
-
-## Privacy
-
-CWC is designed to operate 100% on your machine.
-
-- Zero telemetry collection.
-- Browser communication over WebSockets.
-- Model providers requested directly.
-
-## Commands
-
-### Code at Cursor
-
-- `Code at Cursor` - Get an inline snippet while using the current context.
-- `Code at Cursor using...` - Inline snippet with configuration selection.
-- `Code at Cursor with Instructions` - Inline snippet with instructions.
-- `Code at Cursor with Instructions using...` - Inline snippet with instructions and configuration selection.
-
-### Context
-
-- `Apply Context` - Apply a saved context or save the current file selection.
-- `Add File to Context` - Search and add file (or parent folder via file action) to the context.
-- `Remove File from Context` - Search and remove file (or parent folder via file action) from the context.
-- `Search Files for Context` - Search and add files containing specific keywords to the context.
-- `Copy Context` - Copy all selected files to the clipboard.
-- `Copy Context of Open Editors` - Copy opened and selected files to the clipboard.
-
-### Commit messages
-
-- `Commit Changes` - Generate commit message in your preferred style.
-
-## Build from source
-
-### Prerequisites
-
-- [Node.js](https://nodejs.org/) (v20.x recommended)
-- [pnpm](https://pnpm.io/)
-
-### Steps
-
-1. Clone the repository:
-   `git clone https://github.com/robertpiosik/CodeWebChat.git && cd CodeWebChat`
-2. Install workspace dependencies:
-   `pnpm install`
-3. Navigate to the editor app and build the package:
-   `cd apps/editor && pnpm run build`
-4. Install the generated `.vsix` file in VS Code:
-   Open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`), run **Extensions: Install from VSIX...**, and select the newly created file.
-
-<hr />
-
-Copyright © 2026 [Robert Piosik](https://x.com/robertpiosik) \
-E-mail: robertpiosik@gmail.com \
-Telegram: robertpiosik
+The maintained source boundaries are `apps\browser`, `apps\desktop`, and
+`packages\shared`. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for
+provenance and retained license notices.

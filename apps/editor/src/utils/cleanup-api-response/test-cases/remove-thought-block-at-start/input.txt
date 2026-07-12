@@ -1,2 +1,0 @@
-<thought>I should write some code.</thought>
-const a = 1;

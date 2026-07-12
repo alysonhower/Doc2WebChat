@@ -4,6 +4,7 @@ import {
   observe_for_responses
 } from '../utils/add-apply-response-button'
 import { report_initialization_error } from '../utils/report-initialization-error'
+import { prefill_message } from '../utils/prefill-message'
 
 export const kimi: Chatbot = {
   wait_until_ready: async () => {
@@ -30,21 +31,12 @@ export const kimi: Chatbot = {
       return
     }
 
-    input_element.dispatchEvent(
-      new InputEvent('input', {
-        bubbles: true,
-        cancelable: true,
-        inputType: 'insertText',
-        data: params.message
-      })
-    )
+    prefill_message(input_element, params.message, 'textContent')
   },
   setup_observer: (params) => {
     const add_buttons = (footer: Element) => {
       add_apply_response_button({
-        client_id: params.client_id,
-        raw_instructions: params.raw_instructions,
-        edit_format: params.edit_format,
+        interaction: params.interaction,
         footer,
         get_chat_turn: (f) => f.closest('.segment-content'),
         perform_copy: (f) => {
@@ -68,6 +60,7 @@ export const kimi: Chatbot = {
     }
 
     observe_for_responses({
+      interaction: params.interaction,
       chatbot_name: 'Kimi',
       is_generating: () =>
         !!document.querySelector(

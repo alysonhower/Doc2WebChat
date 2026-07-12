@@ -1,7 +1,9 @@
 import * as fs from 'fs'
 import * as path from 'path'
 
-const manifest_path = path.join(__dirname, 'src', 'manifest.json')
+// Start from webpack's generated manifest so registry-derived content matches
+// are identical in Chrome and Firefox.
+const manifest_path = path.join(__dirname, 'dist', 'manifest.json')
 const manifest = JSON.parse(fs.readFileSync(manifest_path, 'utf8'))
 
 const firefox_manifest: any = { ...manifest }
@@ -18,8 +20,11 @@ if (firefox_manifest.background && firefox_manifest.background.service_worker) {
 firefox_manifest.browser_action = firefox_manifest.action
 delete firefox_manifest.action
 
-firefox_manifest.permissions = firefox_manifest.permissions.filter(
-  (p: string) => p != 'alarms'
+firefox_manifest.permissions = Array.from(
+  new Set([
+    ...firefox_manifest.permissions.filter((p: string) => p != 'alarms'),
+    ...(firefox_manifest.host_permissions || [])
+  ])
 )
 
 firefox_manifest.permissions.push('contextualIdentities')

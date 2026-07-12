@@ -1,101 +1,119 @@
-import { Message } from '@/types/messages'
-import { Logger } from '@shared/utils/logger'
 import browser from 'webextension-polyfill'
-import { apply_response_icon } from '../constants/apply-response-icon'
-import { apply_response_button_title } from '../constants/dictionary'
+import { InteractionIdentity } from '@shared/types/websocket-message'
+import { ContentInteractionMessage } from '@/types/messages'
+import { Logger } from '@/utils/logger'
+import { import_response_icon } from '../constants/import-response-icon'
+import { import_response_button_title } from '../constants/dictionary'
 import {
   apply_chat_response_button_style,
   set_button_disabled_state
 } from './apply-response-styles'
 import { show_response_ready_notification } from './show-response-ready-notification'
 
+const send_interaction_event = (
+  interaction: InteractionIdentity,
+  event: Omit<ContentInteractionMessage, keyof InteractionIdentity>
+) => browser.runtime.sendMessage({ ...interaction, ...event })
+
+export const invoke_native_copy_and_report = async (
+  interaction: InteractionIdentity,
+  perform_copy: () => boolean | void | Promise<boolean | void>,
+  send: typeof send_interaction_event = send_interaction_event
+) => {
+  try {
+    const ready = await send(interaction, { action: 'import-started' })
+    if (ready !== true)
+      throw new Error('clipboard baseline was not acknowledged')
+    const invoked = await perform_copy()
+    if (invoked === false) throw new Error('native copy rejected')
+    await send(interaction, { action: 'import-response' })
+    return true
+  } catch {
+    try {
+      await send(interaction, {
+        action: 'import-failed',
+        code: 'NATIVE_COPY_FAILED'
+      })
+    } catch {
+      // The bridge may have disconnected while preparing the clipboard import.
+    }
+    return false
+  }
+}
+
 export function add_apply_response_button(params: {
-  client_id: number
-  raw_instructions?: string
-  edit_format?: string
+  interaction: InteractionIdentity
   footer: Element
   get_chat_turn: (footer: Element) => HTMLElement | null
-  get_code_from_block?: (code_block: Element) => string | null | undefined
-  perform_copy: (footer: Element) => void | Promise<void>
+  perform_copy: (footer: Element) => boolean | void | Promise<boolean | void>
   insert_button: (footer: Element, button: HTMLButtonElement) => void
   customize_button?: (button: HTMLButtonElement) => void
 }) {
-  const existing_apply_response_button = params.footer.querySelector(
-    '.cwc-apply-response-button'
+  const existing = params.footer.querySelector(
+    '.doc2webchat-import-response-button'
   )
-
-  if (existing_apply_response_button) return
+  if (existing) return
 
   const chat_turn = params.get_chat_turn(params.footer)
   if (!chat_turn) {
     Logger.error({
       function_name: 'add_apply_response_button',
-      message: 'Chat turn container not found',
-      data: params.footer
+      message: 'Chat turn container not found'
     })
     return
   }
 
-  const apply_response_button = document.createElement('button')
-  apply_response_button.innerHTML = apply_response_icon
-  apply_response_button.classList.add('cwc-apply-response-button')
-  apply_response_button.title = apply_response_button_title
-  apply_chat_response_button_style(apply_response_button)
-  if (params.customize_button) params.customize_button(apply_response_button)
+  const button = document.createElement('button')
+  button.innerHTML = import_response_icon
+  button.classList.add('doc2webchat-import-response-button')
+  button.title = import_response_button_title
+  apply_chat_response_button_style(button)
+  params.customize_button?.(button)
 
-  apply_response_button.addEventListener('click', async () => {
-    set_button_disabled_state(apply_response_button)
-    requestAnimationFrame(async () => {
-      await params.perform_copy(params.footer)
-      await new Promise((resolve) => setTimeout(resolve, 500))
-      browser.runtime.sendMessage<Message>({
-        action: 'apply-chat-response',
-        client_id: params.client_id,
-        raw_instructions: params.raw_instructions,
-        edit_format: params.edit_format,
-        url: window.location.href
-      })
-    })
+  button.addEventListener('click', async () => {
+    set_button_disabled_state(button)
+    await invoke_native_copy_and_report(params.interaction, () =>
+      params.perform_copy(params.footer)
+    )
   })
 
-  params.insert_button(params.footer, apply_response_button)
-  apply_response_button.focus({ preventScroll: true })
+  params.insert_button(params.footer, button)
+  button.focus({ preventScroll: true })
 }
 
 export function observe_for_responses(params: {
+  interaction: InteractionIdentity
   chatbot_name: string
   is_generating: () => boolean
   footer_selector: string
   add_buttons?: (footer: Element) => void
 }) {
-  let has_sent_finished_responding = true
+  const baseline = new Set(
+    Array.from(document.querySelectorAll(params.footer_selector))
+  )
+  let completed = false
+  let saw_generation = params.is_generating()
 
   const observer = new MutationObserver(() => {
+    if (completed) return
     if (params.is_generating()) {
-      has_sent_finished_responding = false
+      saw_generation = true
       return
     }
+    if (!saw_generation) return
+    const candidates = Array.from(
+      document.querySelectorAll(params.footer_selector)
+    ).filter((footer) => !baseline.has(footer))
+    const footer = candidates.at(-1)
+    if (!footer) return
 
-    if (!has_sent_finished_responding) {
-      browser.runtime.sendMessage<Message>({
-        action: 'finished-responding'
-      })
-      has_sent_finished_responding = true
-      show_response_ready_notification({ chatbot_name: params.chatbot_name })
-    }
-
-    if (!params.add_buttons) {
-      return
-    }
-
-    const all_footers = document.querySelectorAll(params.footer_selector)
-    if (all_footers.length == 0) {
-      return
-    }
-
-    all_footers.forEach((footer) => {
-      params.add_buttons!(footer)
+    completed = true
+    params.add_buttons?.(footer)
+    void send_interaction_event(params.interaction, {
+      action: 'response-finished'
     })
+    void show_response_ready_notification({ chatbot_name: params.chatbot_name })
+    observer.disconnect()
   })
 
   observer.observe(document.documentElement, {
@@ -103,4 +121,6 @@ export function observe_for_responses(params: {
     subtree: true,
     characterData: true
   })
+
+  return () => observer.disconnect()
 }
