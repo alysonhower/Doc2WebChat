@@ -25,7 +25,7 @@ def make_icon(size: int) -> None:
     draw.rounded_rectangle(
         scaled((margin, margin, size - margin, size - margin)),
         radius=radius * SCALE,
-        fill="#16233B",
+        fill="#1E1B4B",
     )
 
     document = (round(size * 0.24), round(size * 0.16), round(size * 0.71), round(size * 0.77))
@@ -35,16 +35,16 @@ def make_icon(size: int) -> None:
         (round(size * 0.71), round(size * 0.32)),
         (round(size * 0.55), round(size * 0.32)),
     ]
-    draw.polygon([(x * SCALE, y * SCALE) for x, y in fold], fill="#B9E8F6")
+    draw.polygon([(x * SCALE, y * SCALE) for x, y in fold], fill="#C7D2FE")
 
     bubble = (round(size * 0.38), round(size * 0.47), round(size * 0.86), round(size * 0.78))
-    draw.rounded_rectangle(scaled(bubble), radius=max(2, size // 10) * SCALE, fill="#22C3E6")
+    draw.rounded_rectangle(scaled(bubble), radius=max(2, size // 10) * SCALE, fill="#4F46E5")
     tail = [
         (round(size * 0.67), round(size * 0.75)),
         (round(size * 0.75), round(size * 0.88)),
         (round(size * 0.77), round(size * 0.74)),
     ]
-    draw.polygon([(x * SCALE, y * SCALE) for x, y in tail], fill="#22C3E6")
+    draw.polygon([(x * SCALE, y * SCALE) for x, y in tail], fill="#4F46E5")
 
     dot_radius = max(1, round(size * 0.025))
     for center_x in (0.52, 0.62, 0.72):
@@ -52,7 +52,7 @@ def make_icon(size: int) -> None:
         cy = round(size * 0.625)
         draw.ellipse(
             scaled((cx - dot_radius, cy - dot_radius, cx + dot_radius, cy + dot_radius)),
-            fill="#16233B",
+            fill="#EEF2FF",
         )
 
     icon = canvas.resize((size, size), Image.Resampling.LANCZOS)

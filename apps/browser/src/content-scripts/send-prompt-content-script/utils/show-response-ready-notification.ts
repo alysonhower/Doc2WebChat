@@ -13,9 +13,9 @@ export const show_response_ready_notification = async (params: {
 
   if (permission == 'granted') {
     const notification = new Notification(
-      `Doc2WebChat - ${params.chatbot_name} finished responding`,
+      `${params.chatbot_name} response is ready`,
       {
-        body: 'Your response is ready. Click to view.',
+        body: 'Return to the chat and use Import response to bring it into Doc2WebChat.',
         tag: 'doc2webchat'
       }
     )

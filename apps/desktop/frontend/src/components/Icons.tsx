@@ -68,3 +68,32 @@ export const TrashIcon = (props: IconProps) => (
     <path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14M10 11v6M14 11v6" />
   </IconBase>
 )
+
+export const BrandIcon = (props: IconProps) => (
+  <IconBase {...props}>
+    <path d="M6.25 3.25h7.5l4 4v5.25" />
+    <path d="M13.75 3.25v4h4M6.25 3.25v17.5h6" />
+    <path d="M9 11h5M9 14h3" />
+    <path d="M13.5 14.25h7v4.5h-3.75L14.5 21v-2.25h-1z" />
+  </IconBase>
+)
+
+export const SystemThemeIcon = (props: IconProps) => (
+  <IconBase {...props}>
+    <rect x="3" y="4" width="18" height="13" rx="2" />
+    <path d="M8 21h8M12 17v4" />
+  </IconBase>
+)
+
+export const LightThemeIcon = (props: IconProps) => (
+  <IconBase {...props}>
+    <circle cx="12" cy="12" r="3.5" />
+    <path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42" />
+  </IconBase>
+)
+
+export const DarkThemeIcon = (props: IconProps) => (
+  <IconBase {...props}>
+    <path d="M20.4 15.1A8.5 8.5 0 0 1 8.9 3.6 8.5 8.5 0 1 0 20.4 15.1z" />
+  </IconBase>
+)

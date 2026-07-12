@@ -8,6 +8,7 @@ import {
 } from '../structured/model'
 import type { StructuredPrompt } from '../structured/types'
 import { StructuredPromptEditor } from '../structured/StructuredPromptEditor'
+import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { LibraryIcon, TrashIcon } from './Icons'
 
 interface PromptLibraryViewProps {
@@ -21,6 +22,11 @@ interface Draft {
   persistedName: string
   document: StructuredPrompt
   baseline: StructuredPrompt
+}
+
+interface ConfirmationState {
+  kind: 'discard' | 'delete'
+  action: () => void
 }
 
 const newDraft = (): Draft => {
@@ -41,16 +47,22 @@ export function PromptLibraryView({
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [confirmation, setConfirmation] = useState<ConfirmationState | null>(
+    null
+  )
   const dirty =
-    draft.name !== (draft.id ? draft.persistedName : 'Untitled prompt') ||
+    !draft.id ||
+    draft.name !== draft.persistedName ||
     !promptEquals(draft.document, draft.baseline)
+  const newDraftHasEdits =
+    !draft.id &&
+    (draft.name !== 'Untitled prompt' ||
+      !promptEquals(draft.document, draft.baseline))
+  const shouldConfirmDiscard = draft.id ? dirty : newDraftHasEdits
   const sortedPrompts = useMemo(
     () => [...prompts].sort((a, b) => a.name.localeCompare(b.name)),
     [prompts]
   )
-
-  const confirmDiscard = () =>
-    !dirty || window.confirm('Discard unsaved prompt changes?')
 
   const refresh = async () => {
     const value = await invoke((api) => api.list_prompts())
@@ -58,7 +70,7 @@ export function PromptLibraryView({
   }
 
   const selectPrompt = async (promptId: number) => {
-    if (promptId === selectedId || !confirmDiscard()) return
+    if (promptId === selectedId || busy) return
     setBusy(true)
     setError(null)
     try {
@@ -79,11 +91,32 @@ export function PromptLibraryView({
     }
   }
 
+  const requestSelectPrompt = (promptId: number) => {
+    if (promptId === selectedId || busy) return
+    if (shouldConfirmDiscard) {
+      setConfirmation({
+        kind: 'discard',
+        action: () => void selectPrompt(promptId)
+      })
+      return
+    }
+    void selectPrompt(promptId)
+  }
+
   const create = () => {
-    if (!confirmDiscard()) return
+    if (busy) return
     setSelectedId(null)
     setDraft(newDraft())
     setError(null)
+  }
+
+  const requestCreate = () => {
+    if (busy) return
+    if (shouldConfirmDiscard) {
+      setConfirmation({ kind: 'discard', action: create })
+      return
+    }
+    create()
   }
 
   const save = async () => {
@@ -94,20 +127,18 @@ export function PromptLibraryView({
     setBusy(true)
     setError(null)
     try {
-      const name = draft.id ? draft.persistedName : draft.name.trim()
       const { prompt } = await invoke((api) =>
         api.save_prompt({
           promptId: draft.id,
-          name,
+          name: draft.name.trim(),
           document: draft.document
         })
       )
       const document = clonePrompt(prompt.document ?? draft.document)
-      const draftName = draft.id ? draft.name : prompt.name
       setSelectedId(prompt.id)
       setDraft({
         id: prompt.id,
-        name: draftName,
+        name: prompt.name,
         persistedName: prompt.name,
         document,
         baseline: clonePrompt(document)
@@ -120,39 +151,8 @@ export function PromptLibraryView({
     }
   }
 
-  const rename = async () => {
-    if (
-      !draft.id ||
-      !draft.name.trim() ||
-      draft.name.trim() === draft.persistedName
-    )
-      return
-    setBusy(true)
-    setError(null)
-    try {
-      const { prompt } = await invoke((api) =>
-        api.rename_prompt({ promptId: draft.id!, name: draft.name.trim() })
-      )
-      setDraft((current) => ({
-        ...current,
-        name: prompt.name,
-        persistedName: prompt.name
-      }))
-      await refresh()
-    } catch (reason) {
-      setError(errorMessage(reason))
-    } finally {
-      setBusy(false)
-    }
-  }
-
   const remove = async () => {
-    if (
-      !draft.id ||
-      !confirmDiscard() ||
-      !window.confirm(`Delete “${draft.persistedName}”?`)
-    )
-      return
+    if (!draft.id || busy) return
     setBusy(true)
     setError(null)
     try {
@@ -165,6 +165,17 @@ export function PromptLibraryView({
     } finally {
       setBusy(false)
     }
+  }
+
+  const requestRemove = () => {
+    if (!draft.id || busy) return
+    setConfirmation({ kind: 'delete', action: () => void remove() })
+  }
+
+  const confirmAction = () => {
+    const action = confirmation?.action
+    setConfirmation(null)
+    action?.()
   }
 
   return (
@@ -181,7 +192,8 @@ export function PromptLibraryView({
         <button
           className="button button--primary"
           type="button"
-          onClick={create}
+          disabled={busy}
+          onClick={requestCreate}
         >
           New prompt
         </button>
@@ -198,7 +210,8 @@ export function PromptLibraryView({
                 type="button"
                 className={selectedId === prompt.id ? 'is-selected' : ''}
                 key={prompt.id}
-                onClick={() => void selectPrompt(prompt.id)}
+                disabled={busy}
+                onClick={() => requestSelectPrompt(prompt.id)}
               >
                 <LibraryIcon />
                 <span>
@@ -237,26 +250,12 @@ export function PromptLibraryView({
             <div>
               {draft.id ? (
                 <button
-                  className="button button--secondary"
-                  type="button"
-                  disabled={
-                    busy ||
-                    draft.name.trim() === draft.persistedName ||
-                    !draft.name.trim()
-                  }
-                  onClick={() => void rename()}
-                >
-                  Rename
-                </button>
-              ) : null}
-              {draft.id ? (
-                <button
                   className="icon-button icon-button--danger"
                   type="button"
                   title="Delete prompt"
                   aria-label="Delete prompt"
                   disabled={busy}
-                  onClick={() => void remove()}
+                  onClick={requestRemove}
                 >
                   <TrashIcon />
                 </button>
@@ -269,14 +268,19 @@ export function PromptLibraryView({
                 }
                 onClick={() => void save()}
               >
-                {busy ? 'Saving…' : 'Save'}
+                {busy ? 'Saving…' : 'Save changes'}
               </button>
             </div>
           </div>
-          {dirty ? (
+          {!draft.id ? (
             <div className="draft-indicator">
               <span />
-              Unsaved draft
+              Not saved
+            </div>
+          ) : dirty ? (
+            <div className="draft-indicator">
+              <span />
+              Unsaved changes
             </div>
           ) : (
             <div className="draft-indicator draft-indicator--saved">
@@ -297,6 +301,28 @@ export function PromptLibraryView({
           ) : null}
         </div>
       </div>
+      <ConfirmDialog
+        open={confirmation !== null}
+        title={
+          confirmation?.kind === 'delete'
+            ? `Delete “${draft.persistedName}”?`
+            : 'Discard unsaved changes?'
+        }
+        description={
+          confirmation?.kind === 'delete'
+            ? dirty
+              ? 'This prompt and its unsaved changes will be permanently deleted.'
+              : 'This prompt will be permanently deleted. This cannot be undone.'
+            : 'Your edits to this prompt will be lost.'
+        }
+        confirmLabel={
+          confirmation?.kind === 'delete' ? 'Delete prompt' : 'Discard changes'
+        }
+        danger={confirmation?.kind === 'delete'}
+        busy={busy}
+        onCancel={() => setConfirmation(null)}
+        onConfirm={confirmAction}
+      />
     </section>
   )
 }

@@ -5,11 +5,16 @@ import { DocumentsView } from './components/DocumentsView'
 import { HistoryView } from './components/HistoryView'
 import { PromptLibraryView } from './components/PromptLibraryView'
 import {
+  BrandIcon,
   ChatIcon,
+  DarkThemeIcon,
   DocumentIcon,
   HistoryIcon,
-  LibraryIcon
+  LibraryIcon,
+  LightThemeIcon,
+  SystemThemeIcon
 } from './components/Icons'
+import { type ThemePreference, useTheme } from './hooks/useTheme'
 
 type View = 'documents' | 'chat' | 'history' | 'prompts'
 
@@ -24,15 +29,26 @@ const navigation: Array<{
   { id: 'prompts', label: 'Prompt Library', icon: LibraryIcon }
 ]
 
+const themes: Array<{
+  id: ThemePreference
+  label: string
+  icon: typeof SystemThemeIcon
+}> = [
+  { id: 'system', label: 'System theme', icon: SystemThemeIcon },
+  { id: 'light', label: 'Light theme', icon: LightThemeIcon },
+  { id: 'dark', label: 'Dark theme', icon: DarkThemeIcon }
+]
+
 export default function App() {
   const [view, setView] = useState<View>('documents')
   const desktop = useDesktopState()
+  const theme = useTheme()
 
   if (desktop.loading && !desktop.bootstrap) {
     return (
       <main className="startup">
         <div className="brand-mark">
-          D<span>2</span>
+          <BrandIcon />
         </div>
         <div className="startup__line" />
         <p>Starting local workspace…</p>
@@ -43,7 +59,7 @@ export default function App() {
     return (
       <main className="startup">
         <div className="brand-mark">
-          D<span>2</span>
+          <BrandIcon />
         </div>
         <h1>Desktop service unavailable</h1>
         <p>{desktop.error}</p>
@@ -69,7 +85,7 @@ export default function App() {
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-mark">
-            D<span>2</span>
+            <BrandIcon />
           </div>
           <div>
             <strong>Doc2WebChat</strong>
@@ -84,7 +100,10 @@ export default function App() {
                 key={item.id}
                 type="button"
                 className={view === item.id ? 'is-active' : ''}
+                aria-label={item.label}
                 aria-current={view === item.id ? 'page' : undefined}
+                aria-controls={`view-${item.id}`}
+                title={item.label}
                 onClick={() => setView(item.id)}
               >
                 <Icon />
@@ -115,6 +134,23 @@ export default function App() {
           <span>Local first</span>
           <p>Documents and conversations stay on this computer.</p>
         </div>
+        <div className="theme-switcher" role="group" aria-label="Theme">
+          {themes.map((item) => {
+            const Icon = item.icon
+            return (
+              <button
+                key={item.id}
+                type="button"
+                aria-label={item.label}
+                aria-pressed={theme.preference === item.id}
+                title={item.label}
+                onClick={() => theme.setPreference(item.id)}
+              >
+                <Icon />
+              </button>
+            )
+          })}
+        </div>
       </aside>
       <main className="main-content">
         {desktop.error ? (
@@ -125,7 +161,12 @@ export default function App() {
             </button>
           </div>
         ) : null}
-        {view === 'documents' ? (
+        <section
+          id="view-documents"
+          className="app-view-panel"
+          data-testid="view-panel-documents"
+          hidden={view !== 'documents'}
+        >
           <DocumentsView
             documents={documents}
             events={desktop.events}
@@ -133,8 +174,13 @@ export default function App() {
             onJobStarted={desktop.setActiveJob}
             onRefresh={desktop.refreshDocuments}
           />
-        ) : null}
-        {view === 'chat' ? (
+        </section>
+        <section
+          id="view-chat"
+          className="app-view-panel"
+          data-testid="view-panel-chat"
+          hidden={view !== 'chat'}
+        >
           <ChatView
             documents={documents}
             providers={providers}
@@ -154,16 +200,26 @@ export default function App() {
             initialProviderUrls={preferences.providerUrls}
             onRefreshHistory={desktop.refreshHistory}
           />
-        ) : null}
-        {view === 'history' ? (
+        </section>
+        <section
+          id="view-history"
+          className="app-view-panel"
+          data-testid="view-panel-history"
+          hidden={view !== 'history'}
+        >
           <HistoryView history={history} providers={providers} />
-        ) : null}
-        {view === 'prompts' ? (
+        </section>
+        <section
+          id="view-prompts"
+          className="app-view-panel"
+          data-testid="view-panel-prompts"
+          hidden={view !== 'prompts'}
+        >
           <PromptLibraryView
             prompts={prompts}
             onPromptsChange={desktop.replacePrompts}
           />
-        ) : null}
+        </section>
       </main>
     </div>
   )
