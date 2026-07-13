@@ -739,7 +739,7 @@ kbd {
 }
 
 select,
-input,
+input:not([type='checkbox']),
 textarea {
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
@@ -751,20 +751,20 @@ textarea {
 }
 
 select:hover,
-input:hover,
+input:not([type='checkbox']):hover,
 textarea:hover {
   border-color: color-mix(in srgb, var(--primary) 35%, var(--border-strong));
 }
 
 select:focus,
-input:focus,
+input:not([type='checkbox']):focus,
 textarea:focus {
   border-color: var(--focus);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 14%, transparent);
 }
 
 select,
-input {
+input:not([type='checkbox']) {
   min-height: 40px;
   padding: 0 11px;
 }
@@ -1167,10 +1167,14 @@ textarea {
   text-align: center !important;
 }
 
-.document-table__select input {
+.document-table__select input[type='checkbox'],
+.history-selection-toolbar input[type='checkbox'],
+.history-list__check input[type='checkbox'] {
   width: 17px;
+  min-height: 17px;
   height: 17px;
   margin: 0;
+  padding: 0;
   accent-color: var(--primary);
   cursor: pointer;
 }
