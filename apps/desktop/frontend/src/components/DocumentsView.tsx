@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { errorMessage, invoke } from '../api/client'
 import type { AppEvent, DocumentRow, OcrJobState } from '../api/contracts'
+import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { getOcrStatusPresentation } from '../ui/status'
-import { ArrowIcon, FolderIcon, RefreshIcon } from './Icons'
+import { ArrowIcon, FolderIcon, RefreshIcon, TrashIcon } from './Icons'
 
 interface DocumentsViewProps {
   documents: DocumentRow[]
@@ -10,6 +11,8 @@ interface DocumentsViewProps {
   activeJob: OcrJobState | null
   onJobStarted: (job: OcrJobState) => void
   onRefresh: () => Promise<void>
+  onDelete: (documentId: number) => Promise<void>
+  onDeleteMany: (documentIds: number[]) => Promise<void>
 }
 
 interface OcrRequest {
@@ -82,7 +85,9 @@ export function DocumentsView({
   events,
   activeJob,
   onJobStarted,
-  onRefresh
+  onRefresh,
+  onDelete,
+  onDeleteMany
 }: DocumentsViewProps) {
   const [inputPath, setInputPath] = useState('')
   const [outputPath, setOutputPath] = useState('')
@@ -95,6 +100,46 @@ export function DocumentsView({
   const [dismissedConfirmation, setDismissedConfirmation] = useState<
     string | number | null
   >(null)
+  const [documentToDelete, setDocumentToDelete] = useState<DocumentRow | null>(
+    null
+  )
+  const [deletingDocumentId, setDeletingDocumentId] = useState<number | null>(
+    null
+  )
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<number>>(
+    () => new Set()
+  )
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
+  const [deletingMany, setDeletingMany] = useState(false)
+  const selectAllRef = useRef<HTMLInputElement>(null)
+
+  const sortedDocuments = useMemo(
+    () => [...documents].sort((a, b) => a.id - b.id),
+    [documents]
+  )
+  const currentDocumentIds = useMemo(
+    () => new Set(documents.map((document) => document.id)),
+    [documents]
+  )
+  const selectedIds = useMemo(
+    () =>
+      sortedDocuments
+        .filter((document) => selectedDocumentIds.has(document.id))
+        .map((document) => document.id),
+    [selectedDocumentIds, sortedDocuments]
+  )
+
+  useEffect(() => {
+    setSelectedDocumentIds((current) => {
+      const next = new Set(
+        [...current].filter((documentId) => currentDocumentIds.has(documentId))
+      )
+      return next.size === current.size ? current : next
+    })
+    setDocumentToDelete((current) =>
+      current && currentDocumentIds.has(current.id) ? current : null
+    )
+  }, [currentDocumentIds])
 
   const chooseDirectory = async (purpose: 'input' | 'output') => {
     setError(null)
@@ -171,6 +216,27 @@ export function DocumentsView({
   const jobStatus = activeJob
     ? getOcrStatusPresentation(activeJob.status)
     : null
+  const deletionBlocked =
+    activeJob !== null &&
+    !['completed', 'completed-with-errors', 'failed', 'interrupted'].includes(
+      activeJob.status
+    )
+  const selectionDisabled =
+    deletionBlocked || deletingDocumentId !== null || deletingMany
+  const allDocumentsSelected =
+    sortedDocuments.length > 0 && selectedIds.length === sortedDocuments.length
+  const someDocumentsSelected = selectedIds.length > 0 && !allDocumentsSelected
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someDocumentsSelected
+    }
+  }, [someDocumentsSelected])
+
+  useEffect(() => {
+    if (deletionBlocked || selectedIds.length === 0) setBulkDeleteOpen(false)
+    if (deletionBlocked) setDocumentToDelete(null)
+  }, [deletionBlocked, selectedIds.length])
   const jobFailure = useMemo(() => {
     const event = [...events]
       .reverse()
@@ -188,30 +254,81 @@ export function DocumentsView({
   }, [activeJob, events])
   const progressLabel =
     activeJob?.status === 'awaiting-overwrite'
-      ? 'Waiting for confirmation'
+      ? 'Aguardando confirmação'
       : activeJob?.status === 'failed'
-        ? 'Batch stopped'
+        ? 'Lote interrompido'
         : activeJob?.status === 'interrupted'
-          ? 'Batch interrupted'
+          ? 'Lote interrompido'
           : activeJob?.status === 'discovering'
-            ? 'Searching input folders…'
+            ? 'Procurando arquivos nas pastas…'
             : activeJob?.status === 'planning'
-              ? 'Validating file plan…'
+              ? 'Validando plano de arquivos…'
               : activeJob?.status === 'starting-server'
-                ? 'Starting local OCR service…'
+                ? 'Iniciando serviço OCR local…'
                 : progress === null
-                  ? (jobStatus?.label ?? 'Working…')
+                  ? (jobStatus?.label ?? 'Processando…')
                   : `${Math.round(progress)}%`
+
+  const confirmDocumentDeletion = async () => {
+    if (!documentToDelete) return
+    setDeletingDocumentId(documentToDelete.id)
+    setError(null)
+    try {
+      await onDelete(documentToDelete.id)
+      setSelectedDocumentIds((current) => {
+        const next = new Set(current)
+        next.delete(documentToDelete.id)
+        return next
+      })
+      setDocumentToDelete(null)
+    } catch (reason) {
+      setError(errorMessage(reason))
+    } finally {
+      setDeletingDocumentId(null)
+    }
+  }
+
+  const confirmBulkDeletion = async () => {
+    if (!selectedIds.length || selectionDisabled) return
+    setDeletingMany(true)
+    setError(null)
+    try {
+      await onDeleteMany([...selectedIds])
+      setSelectedDocumentIds(new Set())
+      setBulkDeleteOpen(false)
+    } catch (reason) {
+      setError(errorMessage(reason))
+    } finally {
+      setDeletingMany(false)
+    }
+  }
+
+  const toggleDocumentSelection = (documentId: number, selected: boolean) => {
+    setSelectedDocumentIds((current) => {
+      const next = new Set(current)
+      if (selected) next.add(documentId)
+      else next.delete(documentId)
+      return next
+    })
+  }
+
+  const toggleAllDocuments = (selected: boolean) => {
+    setSelectedDocumentIds(
+      selected
+        ? new Set(sortedDocuments.map((document) => document.id))
+        : new Set()
+    )
+  }
 
   return (
     <section className="page" aria-labelledby="documents-title">
       <header className="page-header">
         <div>
-          <span className="eyebrow">OCR workspace</span>
-          <h1 id="documents-title">Documents</h1>
+          <span className="eyebrow">Espaço de OCR</span>
+          <h1 id="documents-title">Documentos</h1>
           <p>
-            Turn local documents into searchable PDFs and conversation-ready
-            text.
+            Transforme documentos locais em PDFs pesquisáveis e texto pronto
+            para usar no Chat.
           </p>
         </div>
         <button
@@ -219,7 +336,7 @@ export function DocumentsView({
           type="button"
           onClick={() => void onRefresh()}
         >
-          <RefreshIcon /> Refresh
+          <RefreshIcon /> Atualizar
         </button>
       </header>
 
@@ -228,33 +345,33 @@ export function DocumentsView({
           <div className="card-heading">
             <div>
               <span className="step-number">01</span>
-              <h2>Choose folders</h2>
+              <h2>Escolha as pastas</h2>
             </div>
             <p>
-              Source files stay local. Output PDFs mirror the source directory
-              structure.
+              Os arquivos de origem permanecem locais. Os PDFs de saída
+              reproduzem a estrutura de pastas da origem.
             </p>
           </div>
           <div className="folder-pair">
             <div className="folder-field">
-              <label>Input folder</label>
+              <label>Pasta de entrada</label>
               <button
                 type="button"
                 onClick={() => void chooseDirectory('input')}
               >
                 <FolderIcon />
-                <span>{inputPath || 'Select source folder'}</span>
+                <span>{inputPath || 'Selecionar pasta de origem'}</span>
               </button>
             </div>
             <ArrowIcon className="folder-pair__arrow" />
             <div className="folder-field">
-              <label>Output folder</label>
+              <label>Pasta de saída</label>
               <button
                 type="button"
                 onClick={() => void chooseDirectory('output')}
               >
                 <FolderIcon />
-                <span>{outputPath || 'Select output folder'}</span>
+                <span>{outputPath || 'Selecionar pasta de saída'}</span>
               </button>
             </div>
           </div>
@@ -266,19 +383,19 @@ export function DocumentsView({
                 checked={recursive}
                 onChange={(event) => setRecursive(event.target.checked)}
               />
-              <span>Include subfolders</span>
+              <span>Incluir subpastas</span>
             </label>
             <label>
-              Existing output
+              Saída existente
               <select
                 value={conflictPolicy}
                 onChange={(event) =>
                   setConflictPolicy(event.target.value as typeof conflictPolicy)
                 }
               >
-                <option value="error">Ask before overwriting</option>
-                <option value="skip">Skip existing</option>
-                <option value="overwrite">Overwrite existing</option>
+                <option value="error">Perguntar antes de sobrescrever</option>
+                <option value="skip">Ignorar existentes</option>
+                <option value="overwrite">Sobrescrever existentes</option>
               </select>
             </label>
             <button
@@ -299,7 +416,7 @@ export function DocumentsView({
               }
               onClick={() => void start()}
             >
-              {busy ? 'Starting…' : 'Start OCR batch'}
+              {busy ? 'Iniciando…' : 'Iniciar lote de OCR'}
               <ArrowIcon />
             </button>
           </div>
@@ -314,7 +431,7 @@ export function DocumentsView({
           <div className="card-heading">
             <div>
               <span className="step-number">02</span>
-              <h2>Batch progress</h2>
+              <h2>Progresso do lote</h2>
             </div>
             {activeJob ? (
               <span className={`status status--${jobStatus?.tone}`}>
@@ -331,22 +448,22 @@ export function DocumentsView({
                   aria-labelledby="overwrite-confirmation-title"
                 >
                   <div>
-                    <span className="eyebrow">Existing output</span>
+                    <span className="eyebrow">Saída existente</span>
                     <h3 id="overwrite-confirmation-title">
                       {visibleOverwriteConfirmation.conflictCount}{' '}
                       {visibleOverwriteConfirmation.conflictCount === 1
-                        ? 'file already exists'
-                        : 'files already exist'}
+                        ? 'arquivo já existe'
+                        : 'arquivos já existem'}
                     </h3>
                     <p>
-                      Overwrite the listed output{' '}
+                      Sobrescrever{' '}
                       {visibleOverwriteConfirmation.conflictCount === 1
-                        ? 'file'
-                        : 'files'}{' '}
-                      and process this batch?
+                        ? 'o arquivo de saída listado'
+                        : 'os arquivos de saída listados'}{' '}
+                      e processar este lote?
                     </p>
                   </div>
-                  <ul aria-label="Conflicting outputs">
+                  <ul aria-label="Saídas em conflito">
                     {visibleOverwriteConfirmation.conflictingOutputs.map(
                       (path) => (
                         <li key={path}>{path}</li>
@@ -355,11 +472,16 @@ export function DocumentsView({
                     {visibleOverwriteConfirmation.conflictCount >
                     visibleOverwriteConfirmation.conflictingOutputs.length ? (
                       <li className="overwrite-confirmation__more">
-                        and{' '}
+                        e mais{' '}
                         {visibleOverwriteConfirmation.conflictCount -
                           visibleOverwriteConfirmation.conflictingOutputs
                             .length}{' '}
-                        more
+                        {visibleOverwriteConfirmation.conflictCount -
+                          visibleOverwriteConfirmation.conflictingOutputs
+                            .length ===
+                        1
+                          ? 'arquivo'
+                          : 'arquivos'}
                       </li>
                     ) : null}
                   </ul>
@@ -379,7 +501,7 @@ export function DocumentsView({
                         })
                       }
                     >
-                      {busy ? 'Starting…' : 'Overwrite and process'}
+                      {busy ? 'Iniciando…' : 'Sobrescrever e processar'}
                     </button>
                     <button
                       className="button button--secondary"
@@ -391,7 +513,7 @@ export function DocumentsView({
                         )
                       }
                     >
-                      Not now
+                      Agora não
                     </button>
                   </div>
                 </div>
@@ -402,7 +524,7 @@ export function DocumentsView({
                   type="button"
                   onClick={() => setDismissedConfirmation(null)}
                 >
-                  Review conflicts
+                  Revisar conflitos
                 </button>
               ) : null}
               <div className="progress-summary">
@@ -410,18 +532,18 @@ export function DocumentsView({
                 <span>
                   {activeJob.status === 'awaiting-overwrite' &&
                   overwriteConfirmation
-                    ? `${overwriteConfirmation.conflictCount} existing output${overwriteConfirmation.conflictCount === 1 ? '' : 's'}`
+                    ? `${overwriteConfirmation.conflictCount} ${overwriteConfirmation.conflictCount === 1 ? 'saída existente' : 'saídas existentes'}`
                     : activeJob.status === 'failed'
-                      ? 'Batch stopped'
+                      ? 'Lote interrompido'
                       : activeJob.total
-                        ? `${processedCount} of ${activeJob.total} files`
-                        : 'Planning files'}
+                        ? `${processedCount} de ${activeJob.total} arquivos`
+                        : 'Planejando arquivos'}
                 </span>
               </div>
               <div
                 className={`progress-track ${indeterminate ? 'progress-track--indeterminate' : ''}`}
                 role="progressbar"
-                aria-label="OCR batch progress"
+                aria-label="Progresso do lote de OCR"
                 aria-valuemin={0}
                 aria-valuemax={100}
                 aria-valuenow={
@@ -430,7 +552,7 @@ export function DocumentsView({
                 aria-valuetext={
                   progress === null
                     ? jobStatus?.label
-                    : `${jobStatus?.label ?? 'Processing'}: ${Math.round(progress)}%`
+                    : `${jobStatus?.label ?? 'Processando'}: ${Math.round(progress)}%`
                 }
               >
                 <span
@@ -446,13 +568,13 @@ export function DocumentsView({
               ) : null}
               <div className="progress-counts">
                 <span>
-                  <strong>{successfulCount}</strong> complete
+                  <strong>{successfulCount}</strong> concluídos
                 </span>
                 <span>
-                  <strong>{activeJob.failed}</strong> failed
+                  <strong>{activeJob.failed}</strong> falharam
                 </span>
                 <span>
-                  <strong>{activeJob.skipped}</strong> skipped
+                  <strong>{activeJob.skipped}</strong> ignorados
                 </span>
               </div>
               {activeJob.currentFile ? (
@@ -483,8 +605,8 @@ export function DocumentsView({
           ) : (
             <div className="empty-state empty-state--small">
               <div className="pulse-mark" aria-hidden="true" />
-              <strong>No batch running</strong>
-              <p>Choose source and output folders to begin.</p>
+              <strong>Nenhum lote em execução</strong>
+              <p>Escolha as pastas de origem e saída para começar.</p>
             </div>
           )}
         </aside>
@@ -492,77 +614,199 @@ export function DocumentsView({
 
       <div className="section-heading">
         <div>
-          <span className="eyebrow">Library</span>
-          <h2>Processed documents</h2>
+          <span className="eyebrow">Biblioteca</span>
+          <h2>Documentos processados</h2>
         </div>
         <span>
           {documents.filter((document) => document.resultAvailable).length}{' '}
-          ready for chat
+          prontos para o Chat
         </span>
       </div>
       <div className="document-table card">
         {documents.length ? (
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Document</th>
-                <th>Status</th>
-                <th>Text</th>
-                <th>Updated</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...documents]
-                .sort((a, b) => a.id - b.id)
-                .map((document) => (
-                  <tr key={document.id}>
-                    <td>
-                      <span className="document-id">{document.id}</span>
-                    </td>
-                    <td>
-                      <strong>{shortPath(document.inputPath)}</strong>
-                      <small title={document.inputPath}>
-                        {document.inputPath}
-                      </small>
-                      {document.latestError ? (
-                        <em>{document.latestError}</em>
-                      ) : null}
-                      {document.latestWarning ? (
-                        <em className="document-warning">
-                          {document.latestWarning}
-                        </em>
-                      ) : null}
-                    </td>
-                    <td>
-                      <span
-                        className={`status status--${getOcrStatusPresentation(document.latestStatus).tone}`}
-                      >
-                        {getOcrStatusPresentation(document.latestStatus).label}
-                      </span>
-                    </td>
-                    <td>
-                      {document.resultAvailable
-                        ? `${(document.text?.length ?? 0).toLocaleString()} chars`
-                        : 'Unavailable'}
-                    </td>
-                    <td>
-                      {document.updatedAt
-                        ? new Date(document.updatedAt).toLocaleString()
-                        : '—'}
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
+          <>
+            {selectedIds.length ? (
+              <div
+                className="document-bulk-actions"
+                role="group"
+                aria-label="Ações para documentos selecionados"
+              >
+                <strong role="status" aria-live="polite">
+                  {selectedIds.length}{' '}
+                  {selectedIds.length === 1
+                    ? 'documento selecionado'
+                    : 'documentos selecionados'}
+                </strong>
+                <div>
+                  <button
+                    className="button button--secondary"
+                    type="button"
+                    disabled={selectionDisabled}
+                    onClick={() => setSelectedDocumentIds(new Set())}
+                  >
+                    Limpar seleção
+                  </button>
+                  <button
+                    className="button button--danger"
+                    type="button"
+                    disabled={selectionDisabled}
+                    onClick={() => setBulkDeleteOpen(true)}
+                  >
+                    Excluir selecionados
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            <table>
+              <thead>
+                <tr>
+                  <th className="document-table__select">
+                    <input
+                      ref={selectAllRef}
+                      type="checkbox"
+                      checked={allDocumentsSelected}
+                      aria-checked={
+                        someDocumentsSelected ? 'mixed' : allDocumentsSelected
+                      }
+                      aria-label={
+                        allDocumentsSelected
+                          ? 'Desmarcar todos os documentos'
+                          : 'Selecionar todos os documentos'
+                      }
+                      disabled={selectionDisabled}
+                      onChange={(event) =>
+                        toggleAllDocuments(event.target.checked)
+                      }
+                    />
+                  </th>
+                  <th>ID</th>
+                  <th>Documento</th>
+                  <th>Status</th>
+                  <th>Texto</th>
+                  <th>Atualizado</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedDocuments.map((document) => {
+                  const selected = selectedDocumentIds.has(document.id)
+                  return (
+                    <tr
+                      key={document.id}
+                      className={selected ? 'is-selected' : undefined}
+                      aria-selected={selected}
+                    >
+                      <td className="document-table__select">
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          aria-label={`${selected ? 'Desmarcar' : 'Selecionar'} documento ${shortPath(document.inputPath)}`}
+                          disabled={selectionDisabled}
+                          onChange={(event) =>
+                            toggleDocumentSelection(
+                              document.id,
+                              event.target.checked
+                            )
+                          }
+                        />
+                      </td>
+                      <td>
+                        <span className="document-id">{document.id}</span>
+                      </td>
+                      <td>
+                        <strong>{shortPath(document.inputPath)}</strong>
+                        <small title={document.inputPath}>
+                          {document.inputPath}
+                        </small>
+                        {document.latestError ? (
+                          <em>{document.latestError}</em>
+                        ) : null}
+                        {document.latestWarning ? (
+                          <em className="document-warning">
+                            {document.latestWarning}
+                          </em>
+                        ) : null}
+                      </td>
+                      <td>
+                        <span
+                          className={`status status--${getOcrStatusPresentation(document.latestStatus).tone}`}
+                        >
+                          {
+                            getOcrStatusPresentation(document.latestStatus)
+                              .label
+                          }
+                        </span>
+                      </td>
+                      <td>
+                        {document.resultAvailable
+                          ? `${(document.text?.length ?? 0).toLocaleString('pt-BR')} caracteres`
+                          : 'Indisponível'}
+                      </td>
+                      <td>
+                        {document.updatedAt
+                          ? new Date(document.updatedAt).toLocaleString('pt-BR')
+                          : '—'}
+                      </td>
+                      <td>
+                        <button
+                          className="icon-button icon-button--danger"
+                          type="button"
+                          disabled={selectionDisabled}
+                          aria-label={`Excluir documento ${shortPath(document.inputPath)}`}
+                          title={
+                            deletionBlocked
+                              ? 'Aguarde a conclusão do lote de OCR para excluir documentos.'
+                              : 'Excluir documento'
+                          }
+                          onClick={() => setDocumentToDelete(document)}
+                        >
+                          <TrashIcon />
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </>
         ) : (
           <div className="empty-state">
             <FolderIcon />
-            <strong>No processed documents</strong>
-            <p>Completed OCR results will appear here with stable IDs.</p>
+            <strong>Nenhum documento processado</strong>
+            <p>
+              Resultados de OCR concluídos aparecerão aqui com IDs estáveis.
+            </p>
           </div>
         )}
       </div>
+      <ConfirmDialog
+        open={documentToDelete !== null && !bulkDeleteOpen}
+        title="Excluir documento?"
+        description={
+          documentToDelete
+            ? `“${shortPath(documentToDelete.inputPath)}” será removido da biblioteca e de novos chats. Os arquivos permanecerão no computador e as Threads antigas serão preservadas.`
+            : ''
+        }
+        confirmLabel="Excluir documento"
+        cancelLabel="Cancelar"
+        danger
+        busy={deletingDocumentId !== null}
+        onConfirm={() => void confirmDocumentDeletion()}
+        onCancel={() => setDocumentToDelete(null)}
+      />
+      <ConfirmDialog
+        open={bulkDeleteOpen && selectedIds.length > 0}
+        title={`Excluir ${selectedIds.length} ${selectedIds.length === 1 ? 'documento' : 'documentos'}?`}
+        description={`${selectedIds.length === 1 ? 'O documento selecionado será removido' : `Os ${selectedIds.length} documentos selecionados serão removidos`} da biblioteca e de novos chats. Os arquivos permanecerão no computador e as Threads antigas serão preservadas.`}
+        confirmLabel={
+          selectedIds.length === 1 ? 'Excluir documento' : 'Excluir documentos'
+        }
+        cancelLabel="Cancelar"
+        danger
+        busy={deletingMany}
+        onConfirm={() => void confirmBulkDeletion()}
+        onCancel={() => setBulkDeleteOpen(false)}
+      />
     </section>
   )
 }

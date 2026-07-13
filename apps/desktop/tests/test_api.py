@@ -9,7 +9,12 @@ from typing import Any
 import pytest
 
 from doc2webchat.api import DesktopApi, WebviewApi
-from doc2webchat.database import Database, DatabaseError, canonical_path
+from doc2webchat.database import (
+    MAX_BULK_DELETE_ITEMS,
+    Database,
+    DatabaseError,
+    canonical_path,
+)
 from doc2webchat.ocr import (
     MAX_OVERWRITE_CONFLICT_PATHS,
     OcrJobRequest,
@@ -161,6 +166,252 @@ def test_bootstrap_and_prompt_crud(
     bootstrap = unwrap(value.get_bootstrap_state())
     assert bootstrap["prompts"][0]["name"] == "Default"
     assert bootstrap["providers"][0]["id"] == "open-webui"
+
+
+def test_delete_document_keeps_files_and_returns_stable_errors(
+    api: tuple[DesktopApi, Database, FakeBridge], tmp_path: Path
+) -> None:
+    value, database, _ = api
+    source = tmp_path / "source.pdf"
+    output = tmp_path / "searchable.pdf"
+    source.write_bytes(b"source")
+    output.write_bytes(b"output")
+    document_id = database.record_document_success(
+        str(source), str(output), "searchable", 1
+    )
+
+    assert unwrap(value.delete_document({"documentId": document_id})) == {
+        "documentId": document_id
+    }
+    assert database.list_documents() == []
+    assert source.read_bytes() == b"source"
+    assert output.read_bytes() == b"output"
+
+    missing = value.delete_document({"documentId": document_id})
+    assert missing == {
+        "ok": False,
+        "error": {
+            "code": "document-not-found",
+            "message": f"Document {document_id} not found",
+            "field": "documentId",
+        },
+    }
+
+
+def test_delete_document_is_blocked_while_ocr_is_active_or_pending(
+    api: tuple[DesktopApi, Database, FakeBridge],
+) -> None:
+    value, database, _ = api
+    document_id = database.record_document_success("in", "out", "text", 1)
+    value.ocr_manager.active_job_id = 999
+    active = value.delete_document({"documentId": document_id})
+    assert active["ok"] is False
+    assert active["error"]["code"] == "document-deletion-blocked"
+    assert "OCR batch" in active["error"]["message"]
+    value.ocr_manager.active_job_id = None
+
+    database.create_ocr_job("new-in", "new-out", False, "error")
+    pending = value.delete_document({"documentId": document_id})
+    assert pending["ok"] is False
+    assert pending["error"]["code"] == "document-deletion-blocked"
+    assert database.list_documents()[0]["id"] == document_id
+
+
+def test_delete_documents_returns_input_order_and_is_atomic_when_missing(
+    api: tuple[DesktopApi, Database, FakeBridge],
+) -> None:
+    value, database, _ = api
+    document_ids = [
+        database.record_document_success(
+            f"C:/in/api-bulk-{index}.png",
+            f"C:/out/api-bulk-{index}.pdf",
+            str(index),
+            index,
+        )
+        for index in range(1, 4)
+    ]
+
+    missing = value.delete_documents(
+        {"documentIds": [document_ids[1], 999999, document_ids[0]]}
+    )
+    assert missing["ok"] is False
+    assert missing["error"] == {
+        "code": "document-not-found",
+        "message": "Document 999999 not found",
+        "field": "documentIds",
+    }
+    assert [row["id"] for row in database.list_documents()] == document_ids
+
+    requested = [document_ids[1], document_ids[0]]
+    assert unwrap(value.delete_documents({"documentIds": requested})) == {
+        "documentIds": requested
+    }
+    assert [row["id"] for row in database.list_documents()] == [document_ids[2]]
+
+
+@pytest.mark.parametrize(
+    "document_ids",
+    [None, [], [1, 1], [0], [True], ["1"]],
+)
+def test_delete_documents_validates_batch_shape(
+    api: tuple[DesktopApi, Database, FakeBridge], document_ids: Any
+) -> None:
+    value, _, _ = api
+    result = value.delete_documents({"documentIds": document_ids})
+    assert result["ok"] is False
+    assert result["error"]["code"] == "invalid-request"
+    assert result["error"]["field"] == "documentIds"
+
+
+def test_delete_documents_rejects_oversized_batch(
+    api: tuple[DesktopApi, Database, FakeBridge],
+) -> None:
+    value, _, _ = api
+    result = value.delete_documents(
+        {"documentIds": list(range(1, MAX_BULK_DELETE_ITEMS + 2))}
+    )
+    assert result["ok"] is False
+    assert result["error"]["code"] == "invalid-request"
+    assert str(MAX_BULK_DELETE_ITEMS) in result["error"]["message"]
+
+
+def test_delete_interaction_accepts_only_terminal_threads(
+    api: tuple[DesktopApi, Database, FakeBridge],
+) -> None:
+    value, database, _ = api
+    active_id = "00000000-0000-4000-8000-000000000201"
+    terminal_id = "00000000-0000-4000-8000-000000000202"
+    instructions = {
+        "version": 1,
+        "root": {"version": 1, "nodes": []},
+        "definitions": {},
+    }
+    for interaction_id in (active_id, terminal_id):
+        database.create_interaction(
+            interaction_id,
+            "browser",
+            "open-webui",
+            "http://localhost:3000/",
+            instructions,
+            "go",
+            "hash",
+            2,
+            [],
+        )
+    database.update_interaction(terminal_id, "failed")
+
+    blocked = value.delete_interaction({"interactionId": active_id})
+    assert blocked == {
+        "ok": False,
+        "error": {
+            "code": "interaction-deletion-blocked",
+            "message": "Only completed, failed, or expired interactions can be deleted",
+            "field": "interactionId",
+        },
+    }
+    assert unwrap(value.delete_interaction({"interactionId": terminal_id})) == {
+        "interactionId": terminal_id
+    }
+    assert [row["interactionId"] for row in database.list_history()] == [active_id]
+
+    missing_id = "00000000-0000-4000-8000-000000000203"
+    missing = value.delete_interaction({"interactionId": missing_id})
+    assert missing["ok"] is False
+    assert missing["error"]["code"] == "interaction-not-found"
+    invalid = value.delete_interaction({"interactionId": "not-a-uuid"})
+    assert invalid["ok"] is False
+    assert invalid["error"]["code"] == "invalid-request"
+
+
+def test_delete_interactions_is_atomic_and_returns_normalized_input_order(
+    api: tuple[DesktopApi, Database, FakeBridge],
+) -> None:
+    value, database, _ = api
+    terminal_ids = [
+        "00000000-0000-4000-8000-00000000a401",
+        "00000000-0000-4000-8000-00000000a402",
+    ]
+    active_id = "00000000-0000-4000-8000-00000000a403"
+    instructions = {
+        "version": 1,
+        "root": {"version": 1, "nodes": []},
+        "definitions": {},
+    }
+    for interaction_id in [*terminal_ids, active_id]:
+        database.create_interaction(
+            interaction_id,
+            "browser",
+            "open-webui",
+            "http://localhost:3000/",
+            instructions,
+            "go",
+            "hash",
+            2,
+            [],
+        )
+    for interaction_id in terminal_ids:
+        database.update_interaction(interaction_id, "expired")
+
+    missing_id = "00000000-0000-4000-8000-00000000a404"
+    missing = value.delete_interactions(
+        {"interactionIds": [terminal_ids[0], missing_id]}
+    )
+    assert missing["ok"] is False
+    assert missing["error"] == {
+        "code": "interaction-not-found",
+        "message": f"Interaction {missing_id} not found",
+        "field": "interactionIds",
+    }
+    assert len(database.list_history()) == 3
+
+    blocked = value.delete_interactions(
+        {"interactionIds": [terminal_ids[0], active_id]}
+    )
+    assert blocked["ok"] is False
+    assert blocked["error"]["code"] == "interaction-deletion-blocked"
+    assert len(database.list_history()) == 3
+
+    requested = [terminal_ids[1].upper(), terminal_ids[0]]
+    assert unwrap(value.delete_interactions({"interactionIds": requested})) == {
+        "interactionIds": [terminal_ids[1], terminal_ids[0]]
+    }
+    assert [row["interactionId"] for row in database.list_history()] == [active_id]
+
+
+@pytest.mark.parametrize(
+    "interaction_ids",
+    [
+        None,
+        [],
+        [
+            "00000000-0000-4000-8000-000000000501",
+            "00000000-0000-4000-8000-000000000501",
+        ],
+        ["not-a-uuid"],
+        [1],
+    ],
+)
+def test_delete_interactions_validates_batch_shape(
+    api: tuple[DesktopApi, Database, FakeBridge], interaction_ids: Any
+) -> None:
+    value, _, _ = api
+    result = value.delete_interactions({"interactionIds": interaction_ids})
+    assert result["ok"] is False
+    assert result["error"]["code"] == "invalid-request"
+    assert result["error"]["field"] == "interactionIds"
+
+
+def test_delete_interactions_rejects_oversized_batch(
+    api: tuple[DesktopApi, Database, FakeBridge],
+) -> None:
+    value, _, _ = api
+    repeated = "00000000-0000-4000-8000-000000000502"
+    result = value.delete_interactions(
+        {"interactionIds": [repeated] * (MAX_BULK_DELETE_ITEMS + 1)}
+    )
+    assert result["ok"] is False
+    assert result["error"]["code"] == "invalid-request"
+    assert str(MAX_BULK_DELETE_ITEMS) in result["error"]["message"]
 
 
 def test_bootstrap_recovers_latest_pending_overwrite_confirmation(
@@ -534,6 +785,10 @@ def test_webview_surface_exposes_only_the_documented_methods(
     surface = WebviewApi(value)
     public_members = {name for name in dir(surface) if not name.startswith("_")}
     assert public_members == {
+        "delete_document",
+        "delete_documents",
+        "delete_interaction",
+        "delete_interactions",
         "get_bootstrap_state",
         "select_directory",
         "start_ocr_job",

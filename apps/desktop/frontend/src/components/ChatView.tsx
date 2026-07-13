@@ -59,9 +59,43 @@ function browserLabel(browser: BrowserRow): string {
     return `${browser.browser}${browser.version ? ` ${browser.version}` : ''}`
   const family =
     browser.userAgent?.match(/(Firefox|Edg|Chrome)\/[^ ]+/)?.[0] ??
-    'Browser extension'
+    'Extensão do navegador'
   return `${family} · ${browser.browserInstanceId.slice(0, 8)}`
 }
+
+const providerCopy: Record<string, string> = {
+  'Project URL': 'URL do projeto',
+  'Gem URL': 'URL do Gem',
+  'Space URL': 'URL do Space',
+  'Hide panel': 'Ocultar painel',
+  'Grounding with Google Search': 'Fundamentação com a Pesquisa Google',
+  'URL context': 'Contexto de URL',
+  Temporary: 'Temporário',
+  'Thinking (free plans)': 'Raciocínio (planos gratuitos)',
+  'Incognito chat': 'Chat anônimo',
+  DeepThink: 'Raciocínio aprofundado',
+  Search: 'Pesquisa',
+  'Deep Thinking': 'Raciocínio aprofundado',
+  'Temporary chat': 'Chat temporário',
+  Private: 'Privado',
+  'Incognito mode': 'Modo anônimo',
+  Think: 'Raciocinar',
+  'Disable reasoning (for hybrid models)':
+    'Desativar raciocínio (para modelos híbridos)',
+  Thinking: 'Raciocínio',
+  'Deep Think': 'Raciocínio aprofundado',
+  None: 'Nenhum',
+  Minimal: 'Mínimo',
+  Low: 'Baixo',
+  Medium: 'Médio',
+  High: 'Alto',
+  XHigh: 'Extra-alto',
+  Max: 'Máximo',
+  Standard: 'Padrão',
+  Extended: 'Estendido'
+}
+
+const translateProviderCopy = (value: string) => providerCopy[value] ?? value
 
 const normalizeInitialSettings = (
   providers: ProviderDefinition[],
@@ -359,30 +393,30 @@ export function ChatView({
     : null
   const browserGuidance =
     connectedBrowsers.length === 0
-      ? 'Extension offline. Open the Doc2WebChat browser extension to connect.'
+      ? 'Extensão offline. Abra a extensão Doc2WebChat para conectar.'
       : connectedBrowsers.length === 1
-        ? `Using ${browserLabel(connectedBrowsers[0])} automatically.`
+        ? `Usando ${browserLabel(connectedBrowsers[0])} automaticamente.`
         : selectedBrowser
-          ? `Using ${browserLabel(selectedBrowser)}.`
-          : `Choose one of ${connectedBrowsers.length} connected browsers.`
+          ? `Usando ${browserLabel(selectedBrowser)}.`
+          : `Selecione um dos ${connectedBrowsers.length.toLocaleString('pt-BR')} navegadores conectados.`
 
   return (
     <section className="page page--chat" aria-labelledby="chat-title">
       <header className="page-header">
         <div>
-          <span className="eyebrow">Structured browser chat</span>
+          <span className="eyebrow">Chat estruturado no navegador</span>
           <h1 id="chat-title">Chat</h1>
           <p>
-            Compose once, send through your browser, and import the native
-            copied response.
+            Crie as instruções, envie pelo navegador e importe a resposta
+            copiada pelo controle nativo.
           </p>
         </div>
         <div className="document-context">
-          <strong>{readyDocuments.length}</strong>
+          <strong>{readyDocuments.length.toLocaleString('pt-BR')}</strong>
           <span>
-            documents
+            {readyDocuments.length === 1 ? 'documento' : 'documentos'}
             <br />
-            in context
+            no contexto
           </span>
         </div>
       </header>
@@ -392,7 +426,7 @@ export function ChatView({
           <div className="card chat-settings">
             <div className="provider-row">
               <label>
-                Provider
+                Provedor
                 <select
                   value={providerId}
                   disabled={busy}
@@ -406,7 +440,7 @@ export function ChatView({
                 </select>
               </label>
               <label>
-                Browser
+                Navegador
                 <select
                   value={browserId}
                   onChange={(event) => setBrowserId(event.target.value)}
@@ -414,8 +448,8 @@ export function ChatView({
                 >
                   <option value="">
                     {connectedBrowsers.length
-                      ? 'Select browser'
-                      : 'No extension connected'}
+                      ? 'Selecionar navegador'
+                      : 'Nenhuma extensão conectada'}
                   </option>
                   {connectedBrowsers.map((browser) => (
                     <option
@@ -428,13 +462,13 @@ export function ChatView({
                 </select>
               </label>
               <label>
-                Saved prompt
+                Prompt salvo
                 <select
                   value={selectedPromptId}
                   disabled={busy}
                   onChange={(event) => requestSavedPrompt(event.target.value)}
                 >
-                  <option value="">Load from library…</option>
+                  <option value="">Carregar da biblioteca…</option>
                   {prompts.map((prompt) => (
                     <option key={prompt.id} value={prompt.id}>
                       {prompt.name}
@@ -445,24 +479,25 @@ export function ChatView({
             </div>
             {provider ? (
               <p className="provider-destination">
-                Destination{' '}
+                Destino{' '}
                 <span>{settings.urlOverride || provider.canonicalUrl}</span>
               </p>
             ) : null}
             <p className="browser-guidance">{browserGuidance}</p>
             <details className="advanced-provider-settings">
               <summary>
-                <span>Advanced provider settings</span>
+                <span>Configurações avançadas do provedor</span>
                 {changedSettings ? (
                   <span className="settings-change-count">
-                    {changedSettings} changed
+                    {changedSettings.toLocaleString('pt-BR')}{' '}
+                    {changedSettings === 1 ? 'alteração' : 'alterações'}
                   </span>
                 ) : null}
               </summary>
               <fieldset className="provider-controls" disabled={busy}>
                 {hasControl(provider, 'model') ? (
                   <label>
-                    Model
+                    Modelo
                     {Object.keys(modelValues).length ? (
                       <select
                         value={settings.model ?? ''}
@@ -473,7 +508,7 @@ export function ChatView({
                           })
                         }
                       >
-                        <option value="">Provider default</option>
+                        <option value="">Padrão do provedor</option>
                         {Object.entries(modelValues).map(
                           ([model, definition]) => (
                             <option key={model} value={model}>
@@ -490,14 +525,14 @@ export function ChatView({
                             model: event.target.value || undefined
                           })
                         }
-                        placeholder="Provider default"
+                        placeholder="Padrão do provedor"
                       />
                     )}
                   </label>
                 ) : null}
                 {hasControl(provider, 'temperature') ? (
                   <label>
-                    Temperature
+                    Temperatura
                     <input
                       type="number"
                       min="0"
@@ -538,8 +573,8 @@ export function ChatView({
                 {hasControl(provider, 'url_override') ? (
                   <label className="provider-control--wide">
                     {typeof urlControl.label === 'string'
-                      ? urlControl.label
-                      : 'URL override'}
+                      ? translateProviderCopy(urlControl.label)
+                      : 'URL personalizada'}
                     <input
                       type="url"
                       value={settings.urlOverride ?? ''}
@@ -554,7 +589,7 @@ export function ChatView({
                 ) : null}
                 {hasControl(provider, 'port') ? (
                   <label>
-                    Port
+                    Porta
                     <input
                       type="number"
                       min="1"
@@ -573,7 +608,7 @@ export function ChatView({
                 ) : null}
                 {reasoningValues.length > 0 ? (
                   <label>
-                    Reasoning effort
+                    Nível de raciocínio
                     <select
                       value={settings.reasoningEffort ?? ''}
                       onChange={(event) =>
@@ -582,10 +617,10 @@ export function ChatView({
                         })
                       }
                     >
-                      <option value="">Provider default</option>
+                      <option value="">Padrão do provedor</option>
                       {reasoningValues.map((value) => (
                         <option key={value} value={value}>
-                          {value}
+                          {translateProviderCopy(value)}
                         </option>
                       ))}
                     </select>
@@ -593,7 +628,7 @@ export function ChatView({
                 ) : null}
                 {hasControl(provider, 'thinking_budget') ? (
                   <label>
-                    Thinking budget
+                    Limite de raciocínio
                     <input
                       type="number"
                       min="0"
@@ -627,12 +662,12 @@ export function ChatView({
                         })
                       }}
                     />
-                    <span>{label}</span>
+                    <span>{translateProviderCopy(label)}</span>
                   </label>
                 ))}
                 {hasControl(provider, 'system_instructions') ? (
                   <label className="provider-control--full">
-                    Provider system instructions
+                    Instruções de sistema do provedor
                     <textarea
                       value={
                         settings.systemInstructions ??
@@ -665,13 +700,13 @@ export function ChatView({
                   checked={reuseTab}
                   onChange={(event) => setReuseTab(event.target.checked)}
                 />
-                <span>Reuse provider tab</span>
+                <span>Reutilizar aba do provedor</span>
               </label>
               <div>
                 <span>
                   {dispatchInfo
-                    ? `${dispatchInfo.promptBytes.toLocaleString()} bytes last sent`
-                    : 'Full document text is included'}
+                    ? `${dispatchInfo.promptBytes.toLocaleString('pt-BR')} bytes no último envio`
+                    : 'O texto completo dos documentos será incluído'}
                 </span>
                 <button
                   className="button button--primary"
@@ -679,7 +714,7 @@ export function ChatView({
                   disabled={busy || !providerId || browserRequired}
                   onClick={() => void send()}
                 >
-                  {busy ? 'Dispatching…' : 'Open in browser'}
+                  {busy ? 'Abrindo…' : 'Abrir no navegador'}
                   <ArrowIcon />
                 </button>
               </div>
@@ -687,8 +722,8 @@ export function ChatView({
             {browserRequired ? (
               <div className="inline-alert">
                 {connectedBrowsers.length
-                  ? 'Choose a connected browser before sending.'
-                  : 'Connect the Doc2WebChat browser extension before sending.'}
+                  ? 'Selecione um navegador conectado antes de enviar.'
+                  : 'Conecte a extensão Doc2WebChat antes de enviar.'}
               </div>
             ) : null}
             {error ? (
@@ -704,11 +739,11 @@ export function ChatView({
             <div>
               <SparkIcon />
               <div>
-                <span className="eyebrow">Latest conversation</span>
+                <span className="eyebrow">Thread mais recente</span>
                 <strong>
                   {latestInteraction?.providerLabel ??
                     latestInteraction?.providerId ??
-                    'Waiting'}
+                    'Aguardando'}
                 </strong>
               </div>
             </div>
@@ -730,9 +765,9 @@ export function ChatView({
       </div>
       <ConfirmDialog
         open={promptToLoad !== null}
-        title="Replace edited instructions?"
-        description="Loading a saved prompt will replace your unsaved instruction edits."
-        confirmLabel="Load saved prompt"
+        title="Substituir instruções editadas?"
+        description="Carregar um prompt salvo substituirá as alterações não salvas nas instruções."
+        confirmLabel="Carregar prompt salvo"
         busy={busy}
         onCancel={() => setPromptToLoad(null)}
         onConfirm={() => {

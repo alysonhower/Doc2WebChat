@@ -7,7 +7,14 @@ from pathlib import Path
 import pytest
 
 import doc2webchat.database as database_module
-from doc2webchat.database import Database, DatabaseError
+from doc2webchat.database import (
+    Database,
+    DatabaseError,
+    DocumentDeletionBlockedError,
+    DocumentNotFoundError,
+    InteractionDeletionBlockedError,
+    InteractionNotFoundError,
+)
 
 
 @pytest.fixture
@@ -55,6 +62,101 @@ def test_migrations_enable_foreign_keys_wal_and_restart_recovery(
         )
     finally:
         second.close()
+
+
+def test_document_deletion_migration_preserves_existing_history(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "app.sqlite3"
+    connection = sqlite3.connect(path)
+    try:
+        connection.executescript(database_module.MIGRATIONS[0])
+        connection.executescript(database_module.MIGRATIONS[1])
+        connection.execute("PRAGMA user_version = 2")
+        connection.execute(
+            """
+            INSERT INTO documents(
+                id, canonical_input_path, successful_output_path, successful_text,
+                result_available, latest_job_id, latest_status, created_at,
+                updated_at, latest_output_path
+            ) VALUES (7, 'legacy-input', 'legacy-output', 'legacy OCR', 1, 3,
+                      'completed', 'created', 'updated', 'legacy-output')
+            """
+        )
+        interaction_id = "00000000-0000-4000-8000-000000000007"
+        connection.execute(
+            """
+            INSERT INTO chat_interactions(
+                interaction_id, browser_instance_id, provider_id, provider_url,
+                status, structured_instructions_json, rendered_instructions,
+                prompt_sha256, prompt_bytes, created_at, updated_at, completed_at
+            ) VALUES (?, 'browser', 'open-webui', 'http://localhost:3000/',
+                      'completed', ?, 'go', 'hash', 42, 'created', 'updated', 'done')
+            """,
+            (
+                interaction_id,
+                '{"version":1,"root":{"version":1,"nodes":[]},"definitions":{}}',
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO interaction_documents(interaction_id, document_id, ordinal)
+            VALUES (?, 7, 0)
+            """,
+            (interaction_id,),
+        )
+        connection.execute(
+            """
+            INSERT INTO messages(interaction_id, ordinal, role, content, created_at)
+            VALUES (?, 0, 'user', '<files>legacy OCR</files>', 'created')
+            """,
+            (interaction_id,),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    database = Database(path)
+    try:
+        document_sql = str(
+            database.scalar(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'documents'"
+            )
+        )
+        foreign_keys = database.call(
+            lambda owner: [
+                dict(row)
+                for row in owner.execute(
+                    "PRAGMA foreign_key_list(interaction_documents)"
+                ).fetchall()
+            ]
+        )
+        assert "AUTOINCREMENT" in document_sql
+        assert database.scalar("PRAGMA user_version") == len(database_module.MIGRATIONS)
+        assert database.scalar("SELECT COUNT(*) FROM pragma_foreign_key_check") == 0
+        assert foreign_keys == [
+            {
+                "id": 0,
+                "seq": 0,
+                "table": "chat_interactions",
+                "from": "interaction_id",
+                "to": "interaction_id",
+                "on_update": "NO ACTION",
+                "on_delete": "CASCADE",
+                "match": "NONE",
+            }
+        ]
+        assert database.list_documents()[0]["id"] == 7
+        assert database.list_history()[0]["documentIds"] == [7]
+
+        database.delete_document(7)
+
+        assert database.list_documents() == []
+        history = database.list_history()[0]
+        assert history["documentIds"] == [7]
+        assert history["messages"][0]["content"] == "<files>legacy OCR</files>"
+    finally:
+        database.close()
 
 
 def test_overwrite_confirmations_survive_restart_and_load_all_conflicts(
@@ -178,6 +280,91 @@ def test_first_failure_is_not_chat_eligible(database: Database) -> None:
     assert database.list_chat_documents() == []
 
 
+def test_delete_document_removes_only_the_library_record_and_never_reuses_id(
+    database: Database,
+) -> None:
+    job_id = database.create_ocr_job("C:/in", "C:/out", False, "error")
+    job_file_id = database.create_ocr_job_file(
+        job_id, "C:/in/deleted.png", "C:/out/deleted.pdf"
+    )
+    database.update_ocr_job_file(job_file_id, "completed", "completed")
+    database.update_ocr_job(job_id, "completed", finished=True)
+    first_id = database.record_document_success(
+        "C:/in/deleted.png", "C:/out/deleted.pdf", "first", job_id
+    )
+    database.delete_document(first_id)
+
+    assert database.list_documents() == []
+    assert database.list_chat_documents() == []
+    assert database.get_ocr_job(job_id)["status"] == "completed"
+    assert (
+        database.scalar(
+            "SELECT COUNT(*) FROM ocr_job_files WHERE id = ?", (job_file_id,)
+        )
+        == 1
+    )
+
+    second_id = database.record_document_success(
+        "C:/in/deleted.png", "C:/out/deleted.pdf", "second", 2
+    )
+    assert second_id > first_id
+    with pytest.raises(DocumentNotFoundError, match="not found"):
+        database.delete_document(first_id)
+
+
+def test_delete_document_is_blocked_by_active_or_pending_ocr(
+    database: Database,
+) -> None:
+    document_id = database.record_document_success("in", "out", "text", 1)
+    job_id = database.create_ocr_job("new-in", "new-out", False, "error")
+
+    with pytest.raises(DocumentDeletionBlockedError, match="OCR batch"):
+        database.delete_document(document_id)
+
+    database.update_ocr_job(job_id, "awaiting-overwrite", finished=True)
+    with pytest.raises(DocumentDeletionBlockedError, match="awaiting overwrite"):
+        database.delete_document(document_id)
+
+    database.set_overwrite_confirmation_status(job_id, "overwrite-declined")
+    database.delete_document(document_id)
+    assert database.list_documents() == []
+
+
+def test_delete_documents_is_atomic_for_missing_and_blocked_items(
+    database: Database,
+) -> None:
+    document_ids = [
+        database.record_document_success(
+            f"C:/in/bulk-{index}.png",
+            f"C:/out/bulk-{index}.pdf",
+            str(index),
+            index,
+        )
+        for index in range(1, 4)
+    ]
+
+    with pytest.raises(DocumentNotFoundError, match="Document 999999 not found"):
+        database.delete_documents([document_ids[0], 999999, document_ids[1]])
+    assert [row["id"] for row in database.list_documents()] == document_ids
+
+    job_id = database.create_ocr_job("bulk-in", "bulk-out", False, "error")
+    with pytest.raises(DocumentDeletionBlockedError, match="OCR batch"):
+        database.delete_documents(document_ids[:2])
+    assert [row["id"] for row in database.list_documents()] == document_ids
+
+    database.update_ocr_job(job_id, "failed", finished=True)
+    database.delete_documents(document_ids[:2])
+    assert [row["id"] for row in database.list_documents()] == [document_ids[2]]
+
+
+@pytest.mark.parametrize("document_ids", [[], [1, 1], [0], [True], ["1"]])
+def test_delete_documents_rejects_invalid_batches(
+    database: Database, document_ids: list[object]
+) -> None:
+    with pytest.raises(ValueError, match="unique positive integers"):
+        database.delete_documents(document_ids)  # type: ignore[arg-type]
+
+
 def test_messages_tags_warnings_and_history_are_ordered(database: Database) -> None:
     document_id = database.record_document_success("in", "out", "text", 1)
     interaction_id = "00000000-0000-4000-8000-000000000010"
@@ -215,6 +402,123 @@ def test_messages_tags_warnings_and_history_are_ordered(database: Database) -> N
     ]
     assert history[0]["messages"][1]["tagValues"][0]["name"] == "a"
     assert history[0]["messages"][1]["warnings"][0]["code"] == "missing-required"
+
+
+@pytest.mark.parametrize("status", ["completed", "failed", "expired"])
+def test_delete_terminal_interaction_cascades_history_but_preserves_documents(
+    database: Database, status: str
+) -> None:
+    document_id = database.record_document_success("in", "out", "text", 1)
+    interaction_id = f"00000000-0000-4000-8000-{len(status):012d}"
+    database.create_interaction(
+        interaction_id,
+        "browser",
+        "open-webui",
+        "http://localhost:3000/",
+        {"version": 1, "root": {"version": 1, "nodes": []}, "definitions": {}},
+        "go",
+        "hash",
+        2,
+        [document_id],
+    )
+    message_id = database.add_message(interaction_id, "assistant", "<a>x</a>")
+    database.replace_message_analysis(
+        message_id,
+        [
+            {
+                "name": "a",
+                "raw": "x",
+                "trimmed": "x",
+                "start": 0,
+                "end": 8,
+                "parentIndex": None,
+            }
+        ],
+        [{"code": "test-warning", "message": "warning", "tagName": "a"}],
+    )
+    database.update_interaction(interaction_id, status)
+
+    database.delete_interaction(interaction_id)
+
+    assert database.list_history() == []
+    assert [row["id"] for row in database.list_documents()] == [document_id]
+    assert database.scalar("SELECT COUNT(*) FROM interaction_documents") == 0
+    assert database.scalar("SELECT COUNT(*) FROM messages") == 0
+    assert database.scalar("SELECT COUNT(*) FROM message_tag_values") == 0
+    assert database.scalar("SELECT COUNT(*) FROM message_warnings") == 0
+
+
+def test_delete_interaction_rejects_active_and_missing_rows(database: Database) -> None:
+    interaction_id = "00000000-0000-4000-8000-000000000099"
+    database.create_interaction(
+        interaction_id,
+        "browser",
+        "open-webui",
+        "http://localhost:3000/",
+        {"version": 1, "root": {"version": 1, "nodes": []}, "definitions": {}},
+        "go",
+        "hash",
+        2,
+        [],
+    )
+
+    with pytest.raises(InteractionDeletionBlockedError, match="completed"):
+        database.delete_interaction(interaction_id)
+    with pytest.raises(InteractionNotFoundError, match="not found"):
+        database.delete_interaction("00000000-0000-4000-8000-000000000100")
+    assert database.get_interaction(interaction_id)["status"] == "created"
+
+
+def test_delete_interactions_is_atomic_for_missing_and_active_items(
+    database: Database,
+) -> None:
+    terminal_ids = [
+        "00000000-0000-4000-8000-000000000301",
+        "00000000-0000-4000-8000-000000000302",
+    ]
+    active_id = "00000000-0000-4000-8000-000000000303"
+    missing_id = "00000000-0000-4000-8000-000000000304"
+    instructions = {
+        "version": 1,
+        "root": {"version": 1, "nodes": []},
+        "definitions": {},
+    }
+    for interaction_id in [*terminal_ids, active_id]:
+        database.create_interaction(
+            interaction_id,
+            "browser",
+            "open-webui",
+            "http://localhost:3000/",
+            instructions,
+            "go",
+            "hash",
+            2,
+            [],
+        )
+    for interaction_id in terminal_ids:
+        database.update_interaction(interaction_id, "completed")
+
+    with pytest.raises(InteractionNotFoundError, match=missing_id):
+        database.delete_interactions([terminal_ids[0], missing_id])
+    assert len(database.list_history()) == 3
+
+    with pytest.raises(InteractionDeletionBlockedError, match="completed"):
+        database.delete_interactions([terminal_ids[0], active_id])
+    assert len(database.list_history()) == 3
+
+    database.delete_interactions(terminal_ids)
+    assert [row["interactionId"] for row in database.list_history()] == [active_id]
+
+
+@pytest.mark.parametrize(
+    "interaction_ids",
+    [[], ["same", "same"], ["not-a-uuid"], [1]],
+)
+def test_delete_interactions_rejects_invalid_batches(
+    database: Database, interaction_ids: list[object]
+) -> None:
+    with pytest.raises(ValueError, match=r"unique.*interaction IDs"):
+        database.delete_interactions(interaction_ids)  # type: ignore[arg-type]
 
 
 def test_all_calls_are_serialized_through_owner_thread(database: Database) -> None:

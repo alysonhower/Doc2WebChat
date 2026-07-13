@@ -7,9 +7,11 @@ jest.mock('./show-response-ready-notification', () => ({
 }))
 
 import {
+  add_apply_response_button,
   invoke_native_copy_and_report,
   observe_for_responses
 } from './add-apply-response-button'
+import { import_response_button_title } from '../constants/dictionary'
 
 const interaction = {
   interaction_id: 'ec20c80d-a1a4-4b6a-922c-e13a9c1052ec',
@@ -19,6 +21,38 @@ const interaction = {
 }
 
 describe('single interaction response lifecycle', () => {
+  it('labels the import action in Brazilian Portuguese', () => {
+    const attributes = new Map<string, string>()
+    const button = {
+      ownerDocument: { getElementById: () => ({}) },
+      innerHTML: '',
+      title: '',
+      type: 'submit',
+      classList: { add: jest.fn() },
+      setAttribute: (name: string, value: string) =>
+        attributes.set(name, value),
+      addEventListener: jest.fn(),
+      focus: jest.fn()
+    } as unknown as HTMLButtonElement
+    ;(global as any).document = { createElement: () => button }
+    const insert_button = jest.fn()
+
+    add_apply_response_button({
+      interaction,
+      footer: { querySelector: () => null } as unknown as Element,
+      get_chat_turn: () => ({}) as HTMLElement,
+      perform_copy: () => true,
+      insert_button
+    })
+
+    expect(import_response_button_title).toBe(
+      'Copiar pelo controle do provedor e importar para o Doc2WebChat'
+    )
+    expect(button.title).toBe(import_response_button_title)
+    expect(attributes.get('aria-label')).toBe(import_response_button_title)
+    expect(insert_button).toHaveBeenCalledWith(expect.anything(), button)
+  })
+
   it('reports native-copy success only after the provider control returns', async () => {
     const events: string[] = []
     const send = jest.fn(async (_identity, event) => {

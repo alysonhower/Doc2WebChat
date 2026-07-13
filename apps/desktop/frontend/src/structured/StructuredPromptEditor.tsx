@@ -73,48 +73,56 @@ export function StructuredPromptEditor({
       <div className="structured-prompt__main">
         <div className="field-heading">
           <div>
-            <label>Instructions</label>
+            <label>Instruções</label>
             <p>
-              Type <kbd>@</kbd> to insert a structured response tag.
+              Digite <kbd>@</kbd> para inserir uma tag de resposta estruturada.
             </p>
           </div>
-          <span className="quiet-badge">{occurrences.length} tags</span>
+          <span className="quiet-badge">
+            {occurrences.length.toLocaleString('pt-BR')}{' '}
+            {occurrences.length === 1 ? 'tag' : 'tags'}
+          </span>
         </div>
         <InstructionEditor
           id={compact ? 'chat-root' : 'library-root'}
-          label="Instructions"
+          label="Instruções"
           value={value.root}
           roles={roles}
           knownNames={knownNames}
-          placeholder="Describe the task. Type @summary, @date, or another tag…"
+          placeholder="Descreva a tarefa. Digite @resumo, @data ou outra tag…"
           onChange={(document) => onChange(withDocument(value, null, document))}
           onSelectTag={selectTag}
         />
         <details className="serialized-preview">
-          <summary>Serialized instruction preview</summary>
+          <summary>Prévia do prompt</summary>
           <pre>
-            {serializeStructuredPrompt(value) || 'No instructions yet.'}
+            {serializeStructuredPrompt(value) || 'Nenhuma instrução ainda.'}
           </pre>
         </details>
       </div>
 
-      <aside className="definition-panel" aria-label="Tag definition editor">
+      <aside
+        className="definition-panel"
+        aria-label="Editor de definição da tag"
+      >
         {selected && selectedName ? (
           <>
             <div className="definition-panel__header">
               <div>
-                <span className="eyebrow">Selected tag</span>
+                <span className="eyebrow">Tag selecionada</span>
                 <strong>@{selectedName}</strong>
               </div>
               <span
                 className={`role-pill role-pill--${roles[selected.occurrenceId] ?? 'reference'}`}
               >
-                {roles[selected.occurrenceId] ?? 'reference'}
+                {roles[selected.occurrenceId] === 'definition'
+                  ? 'Define a resposta'
+                  : 'Usa a definição'}
               </span>
             </div>
             <div className="inline-form">
               <label htmlFor={`rename-${selected.occurrenceId}`}>
-                Occurrence name
+                Nome da tag
               </label>
               <div>
                 <input
@@ -129,7 +137,7 @@ export function StructuredPromptEditor({
                   onClick={applyRename}
                   disabled={!renameIsValid || renameValue === selectedName}
                 >
-                  Rename
+                  Renomear
                 </button>
               </div>
               {!renameIsValid ? (
@@ -138,8 +146,8 @@ export function StructuredPromptEditor({
             </div>
             <div className="field-heading field-heading--definition">
               <div>
-                <label>Nested instruction</label>
-                <p>Used only at the first @{selectedName} occurrence.</p>
+                <label>Instrução aninhada</label>
+                <p>Usada apenas na primeira ocorrência de @{selectedName}.</p>
               </div>
               {selectedDefinition ? (
                 <button
@@ -156,18 +164,18 @@ export function StructuredPromptEditor({
                     onChange(next)
                   }}
                 >
-                  Clear
+                  Limpar
                 </button>
               ) : null}
             </div>
             <InstructionEditor
               key={`definition-${selectedName}`}
               id={`definition-${selectedName}`}
-              label={`Nested instruction for ${selectedName}`}
+              label={`Instrução aninhada para ${selectedName}`}
               value={selectedDefinition ?? emptyDocument()}
               roles={roles}
               knownNames={knownNames}
-              placeholder={`Describe what <${selectedName}> should contain. Nested @tags are supported.`}
+              placeholder={`Descreva o que <${selectedName}> deve conter. Tags @ aninhadas são compatíveis.`}
               onChange={(document) =>
                 onChange(withDocument(value, selectedName, document))
               }
@@ -179,9 +187,9 @@ export function StructuredPromptEditor({
             <span className="empty-orbit" aria-hidden="true">
               @
             </span>
-            <strong>Select a tag</strong>
+            <strong>Selecione uma tag</strong>
             <p>
-              Its name, role, and optional nested instruction will appear here.
+              O nome, a função e a instrução aninhada opcional aparecerão aqui.
             </p>
           </div>
         )}

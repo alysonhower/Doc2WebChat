@@ -76,6 +76,42 @@ export function useDesktopState() {
     )
   }, [])
 
+  const deleteDocument = useCallback(async (documentId: number) => {
+    await invoke((api) => api.delete_document({ documentId }))
+    setState((current) =>
+      current.bootstrap
+        ? {
+            ...current,
+            bootstrap: {
+              ...current.bootstrap,
+              documents: current.bootstrap.documents.filter(
+                (document) => document.id !== documentId
+              )
+            }
+          }
+        : current
+    )
+  }, [])
+
+  const deleteDocuments = useCallback(async (documentIds: number[]) => {
+    const uniqueIds = [...new Set(documentIds)]
+    await invoke((api) => api.delete_documents({ documentIds: uniqueIds }))
+    const deleted = new Set(uniqueIds)
+    setState((current) =>
+      current.bootstrap
+        ? {
+            ...current,
+            bootstrap: {
+              ...current.bootstrap,
+              documents: current.bootstrap.documents.filter(
+                (document) => !deleted.has(document.id)
+              )
+            }
+          }
+        : current
+    )
+  }, [])
+
   const refreshHistory = useCallback(async () => {
     const value = await invoke((api) => api.list_history())
     const history = Array.isArray(value) ? value : value.history
@@ -84,6 +120,44 @@ export function useDesktopState() {
         ? {
             ...current,
             bootstrap: { ...current.bootstrap, history }
+          }
+        : current
+    )
+  }, [])
+
+  const deleteInteraction = useCallback(async (interactionId: string) => {
+    await invoke((api) => api.delete_interaction({ interactionId }))
+    setState((current) =>
+      current.bootstrap
+        ? {
+            ...current,
+            bootstrap: {
+              ...current.bootstrap,
+              history: current.bootstrap.history.filter(
+                (interaction) => interaction.interactionId !== interactionId
+              )
+            }
+          }
+        : current
+    )
+  }, [])
+
+  const deleteInteractions = useCallback(async (interactionIds: string[]) => {
+    const uniqueIds = [...new Set(interactionIds)]
+    await invoke((api) =>
+      api.delete_interactions({ interactionIds: uniqueIds })
+    )
+    const deleted = new Set(uniqueIds)
+    setState((current) =>
+      current.bootstrap
+        ? {
+            ...current,
+            bootstrap: {
+              ...current.bootstrap,
+              history: current.bootstrap.history.filter(
+                (interaction) => !deleted.has(interaction.interactionId)
+              )
+            }
           }
         : current
     )
@@ -265,7 +339,11 @@ export function useDesktopState() {
     ...state,
     reload: load,
     refreshDocuments,
+    deleteDocument,
+    deleteDocuments,
     refreshHistory,
+    deleteInteraction,
+    deleteInteractions,
     refreshBrowsers,
     replaceDocuments,
     replaceHistory,

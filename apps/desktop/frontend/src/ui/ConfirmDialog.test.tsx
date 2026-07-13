@@ -9,13 +9,13 @@ function Harness({ onConfirm = vi.fn() }: { onConfirm?: () => void }) {
   return (
     <>
       <button type="button" onClick={() => setOpen(true)}>
-        Delete prompt
+        Excluir prompt
       </button>
       <ConfirmDialog
         open={open}
-        title="Delete prompt?"
-        description="This cannot be undone."
-        confirmLabel="Delete"
+        title="Excluir prompt?"
+        description="Esta ação não pode ser desfeita."
+        confirmLabel="Excluir"
         danger
         onCancel={() => setOpen(false)}
         onConfirm={onConfirm}
@@ -29,10 +29,10 @@ describe('ConfirmDialog', () => {
     const user = userEvent.setup()
     render(<Harness />)
 
-    const trigger = screen.getByRole('button', { name: 'Delete prompt' })
+    const trigger = screen.getByRole('button', { name: 'Excluir prompt' })
     await user.click(trigger)
-    const cancel = screen.getByRole('button', { name: 'Cancel' })
-    const confirm = screen.getByRole('button', { name: 'Delete' })
+    const cancel = screen.getByRole('button', { name: 'Cancelar' })
+    const confirm = screen.getByRole('button', { name: 'Excluir' })
     expect(cancel).toHaveFocus()
 
     await user.tab({ shift: true })
@@ -50,11 +50,11 @@ describe('ConfirmDialog', () => {
     const confirm = vi.fn()
     render(<Harness onConfirm={confirm} />)
 
-    await user.click(screen.getByRole('button', { name: 'Delete prompt' }))
+    await user.click(screen.getByRole('button', { name: 'Excluir prompt' }))
     expect(
-      screen.getByRole('dialog', { name: 'Delete prompt?' })
+      screen.getByRole('dialog', { name: 'Excluir prompt?' })
     ).toHaveAttribute('aria-modal', 'true')
-    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    await user.click(screen.getByRole('button', { name: 'Excluir' }))
     expect(confirm).toHaveBeenCalledOnce()
   })
 })

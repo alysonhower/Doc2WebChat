@@ -44,7 +44,7 @@ function ProgressiveText({
               )
             }
           >
-            Show more
+            Mostrar mais
           </button>
           {content.length <= SHOW_ALL_LIMIT ? (
             <button
@@ -52,12 +52,12 @@ function ProgressiveText({
               type="button"
               onClick={() => setVisibleLength(content.length)}
             >
-              Show all
+              Mostrar tudo
             </button>
           ) : null}
           <span>
-            {shownLength.toLocaleString()} of {content.length.toLocaleString()}{' '}
-            characters
+            {shownLength.toLocaleString('pt-BR')} de{' '}
+            {content.length.toLocaleString('pt-BR')} caracteres
           </span>
         </div>
       ) : null}
@@ -109,6 +109,25 @@ function TagResult({ node }: { node: TagTreeNode }) {
   )
 }
 
+function warningMessage(
+  warning: MessageWarning,
+  parent?: MessageTagValue
+): string {
+  if (warning.code === 'missing-required' && warning.tagName)
+    return `A tag esperada <${warning.tagName}> não foi encontrada.`
+  if (warning.code === 'empty-occurrence' && warning.tagName)
+    return `A tag <${warning.tagName}> está vazia.`
+  if (warning.code === 'missing-child' && warning.tagName && parent)
+    return `A tag <${parent.name}> não contém a tag filha <${warning.tagName}>.`
+  if (warning.code === 'malformed-structure' && warning.tagName) {
+    if (warning.message.startsWith('Unexpected closing tag'))
+      return `Tag de fechamento inesperada </${warning.tagName}>.`
+    if (warning.message.startsWith('Unclosed tag'))
+      return `A tag <${warning.tagName}> não foi fechada.`
+  }
+  return warning.message
+}
+
 function WarningPanel({
   warnings,
   values
@@ -120,9 +139,9 @@ function WarningPanel({
     <section
       className="message-warnings"
       role="region"
-      aria-label="Response warnings"
+      aria-label="Avisos da resposta"
     >
-      <strong>Review warnings</strong>
+      <strong>Revisar avisos</strong>
       <ul>
         {warnings.map((warning, index) => {
           const parent =
@@ -133,8 +152,8 @@ function WarningPanel({
             <li
               key={`${warning.code}-${warning.parentIndex ?? 'root'}-${index}`}
             >
-              <span>{warning.message}</span>
-              {parent ? <small>Inside @{parent.name}</small> : null}
+              <span>{warningMessage(warning, parent)}</span>
+              {parent ? <small>Dentro de @{parent.name}</small> : null}
             </li>
           )
         })}
@@ -152,24 +171,26 @@ function OutgoingPromptSummary({
   return (
     <section
       className="outgoing-prompt-summary"
-      aria-label="Outgoing prompt summary"
+      aria-label="Resumo do prompt enviado"
     >
       <div>
-        <strong>Instructions sent</strong>
-        <p>{interaction.renderedInstructions || 'No instructions recorded.'}</p>
+        <strong>Instruções enviadas</strong>
+        <p>
+          {interaction.renderedInstructions || 'Nenhuma instrução registrada.'}
+        </p>
       </div>
       <dl>
         <div>
-          <dt>Prompt size</dt>{' '}
+          <dt>Tamanho do prompt</dt>{' '}
           <dd>
             {interaction.promptBytes === undefined
-              ? 'Not recorded'
-              : `${interaction.promptBytes.toLocaleString()} bytes`}
+              ? 'Não registrado'
+              : `${interaction.promptBytes.toLocaleString('pt-BR')} bytes`}
           </dd>
         </div>
         <div>
-          <dt>Documents</dt>{' '}
-          <dd>{documentIds.length ? documentIds.join(', ') : 'None'}</dd>
+          <dt>Documentos</dt>{' '}
+          <dd>{documentIds.length ? documentIds.join(', ') : 'Nenhum'}</dd>
         </div>
       </dl>
     </section>
@@ -192,15 +213,15 @@ function Message({
       data-testid={`message-${message.id}`}
     >
       <header>
-        <span>{isUser ? 'Your prompt' : 'Browser response'}</span>
+        <span>{isUser ? 'Seu prompt' : 'Resposta do navegador'}</span>
         <time dateTime={message.createdAt}>
-          {new Date(message.createdAt).toLocaleString()}
+          {new Date(message.createdAt).toLocaleString('pt-BR')}
         </time>
       </header>
       {isUser ? <OutgoingPromptSummary interaction={interaction} /> : null}
       {isUser ? (
         <strong className="message__section-title">
-          Complete outgoing prompt
+          Prompt completo enviado
         </strong>
       ) : null}
       <ProgressiveText
@@ -209,8 +230,8 @@ function Message({
         messageId={message.id}
       />
       {tagTree.length ? (
-        <section className="tag-results" aria-label="Extracted values">
-          <strong>Extracted values</strong>
+        <section className="tag-results" aria-label="Valores extraídos">
+          <strong>Valores extraídos</strong>
           <ul>
             {tagTree.map((node) => (
               <TagResult key={node.value.id ?? node.index} node={node} />
@@ -227,7 +248,7 @@ function Message({
 
 export function Conversation({
   interaction,
-  emptyText = 'No messages yet.'
+  emptyText = 'Nenhuma mensagem ainda.'
 }: {
   interaction?: InteractionRow
   emptyText?: string
@@ -236,7 +257,7 @@ export function Conversation({
     return (
       <div className="empty-state empty-state--conversation">
         <strong>{emptyText}</strong>
-        <p>A dispatched prompt and imported response will appear here.</p>
+        <p>O prompt enviado e a resposta importada aparecerão aqui.</p>
       </div>
     )
   const messages = [...interaction.messages].sort(

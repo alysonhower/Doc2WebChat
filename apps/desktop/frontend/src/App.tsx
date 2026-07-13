@@ -23,10 +23,10 @@ const navigation: Array<{
   label: string
   icon: typeof DocumentIcon
 }> = [
-  { id: 'documents', label: 'Documents', icon: DocumentIcon },
+  { id: 'documents', label: 'Documentos', icon: DocumentIcon },
   { id: 'chat', label: 'Chat', icon: ChatIcon },
-  { id: 'history', label: 'History', icon: HistoryIcon },
-  { id: 'prompts', label: 'Prompt Library', icon: LibraryIcon }
+  { id: 'history', label: 'Threads', icon: HistoryIcon },
+  { id: 'prompts', label: 'Biblioteca de prompts', icon: LibraryIcon }
 ]
 
 const themes: Array<{
@@ -34,9 +34,9 @@ const themes: Array<{
   label: string
   icon: typeof SystemThemeIcon
 }> = [
-  { id: 'system', label: 'System theme', icon: SystemThemeIcon },
-  { id: 'light', label: 'Light theme', icon: LightThemeIcon },
-  { id: 'dark', label: 'Dark theme', icon: DarkThemeIcon }
+  { id: 'system', label: 'Tema do sistema', icon: SystemThemeIcon },
+  { id: 'light', label: 'Tema claro', icon: LightThemeIcon },
+  { id: 'dark', label: 'Tema escuro', icon: DarkThemeIcon }
 ]
 
 export default function App() {
@@ -51,7 +51,7 @@ export default function App() {
           <BrandIcon />
         </div>
         <div className="startup__line" />
-        <p>Starting local workspace…</p>
+        <p>Iniciando espaço de trabalho local…</p>
       </main>
     )
   }
@@ -61,14 +61,14 @@ export default function App() {
         <div className="brand-mark">
           <BrandIcon />
         </div>
-        <h1>Desktop service unavailable</h1>
+        <h1>Serviço desktop indisponível</h1>
         <p>{desktop.error}</p>
         <button
           className="button button--primary"
           type="button"
           onClick={() => void desktop.reload()}
         >
-          Try again
+          Tentar novamente
         </button>
       </main>
     )
@@ -89,10 +89,10 @@ export default function App() {
           </div>
           <div>
             <strong>Doc2WebChat</strong>
-            <small>Local document workspace</small>
+            <small>Espaço de documentos local</small>
           </div>
         </div>
-        <nav aria-label="Main navigation">
+        <nav aria-label="Navegação principal">
           {navigation.map((item) => {
             const Icon = item.icon
             return (
@@ -124,17 +124,17 @@ export default function App() {
           <div>
             <strong>
               {connectedCount
-                ? `${connectedCount} browser${connectedCount === 1 ? '' : 's'} connected`
-                : 'Extension offline'}
+                ? `${connectedCount} ${connectedCount === 1 ? 'navegador conectado' : 'navegadores conectados'}`
+                : 'Extensão offline'}
             </strong>
             <small>Bridge · 127.0.0.1:55155</small>
           </div>
         </div>
         <div className="privacy-note">
-          <span>Local first</span>
-          <p>Documents and conversations stay on this computer.</p>
+          <span>Local por padrão</span>
+          <p>Documentos e Threads ficam neste computador.</p>
         </div>
-        <div className="theme-switcher" role="group" aria-label="Theme">
+        <div className="theme-switcher" role="group" aria-label="Tema">
           {themes.map((item) => {
             const Icon = item.icon
             return (
@@ -157,7 +157,7 @@ export default function App() {
           <div className="global-alert" role="alert">
             <span>{desktop.error}</span>
             <button type="button" onClick={desktop.clearError}>
-              Dismiss
+              Dispensar
             </button>
           </div>
         ) : null}
@@ -173,6 +173,8 @@ export default function App() {
             activeJob={desktop.activeJob}
             onJobStarted={desktop.setActiveJob}
             onRefresh={desktop.refreshDocuments}
+            onDelete={desktop.deleteDocument}
+            onDeleteMany={desktop.deleteDocuments}
           />
         </section>
         <section
@@ -207,7 +209,12 @@ export default function App() {
           data-testid="view-panel-history"
           hidden={view !== 'history'}
         >
-          <HistoryView history={history} providers={providers} />
+          <HistoryView
+            history={history}
+            providers={providers}
+            onDelete={desktop.deleteInteraction}
+            onDeleteMany={desktop.deleteInteractions}
+          />
         </section>
         <section
           id="view-prompts"

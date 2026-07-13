@@ -7,33 +7,39 @@ import {
 describe('status presentation', () => {
   it('maps interaction lifecycle states to actionable copy', () => {
     expect(getInteractionStatusPresentation('dispatched')).toMatchObject({
-      label: 'Opening provider',
+      label: 'Abrindo provedor',
       tone: 'info',
       active: true
     })
     expect(getInteractionStatusPresentation('prefilled').label).toBe(
-      'Ready to submit'
+      'Pronta para enviar'
     )
     expect(getInteractionStatusPresentation('awaiting-import').label).toBe(
-      'Ready to import'
+      'Pronta para importar'
     )
     expect(getInteractionStatusPresentation('completed')).toMatchObject({
-      label: 'Imported',
+      label: 'Importada',
       tone: 'success',
       active: false
     })
     expect(getInteractionStatusPresentation('expired').guidance).toMatch(
-      /start a new chat/i
+      /novo Chat/i
     )
   })
 
   it('maps OCR stages and safely humanizes unknown values', () => {
-    expect(getOcrStatusPresentation('discovering').label).toBe('Finding files')
-    expect(getOcrStatusPresentation('planning').label).toBe('Checking outputs')
+    expect(getOcrStatusPresentation('discovering').label).toBe(
+      'Procurando arquivos'
+    )
+    expect(getOcrStatusPresentation('planning').label).toBe(
+      'Verificando saídas'
+    )
     expect(getOcrStatusPresentation('completed-with-errors')).toMatchObject({
-      label: 'Completed with issues',
+      label: 'Concluído com problemas',
       tone: 'warning'
     })
-    expect(getOcrStatusPresentation('ocr_failed').label).toBe('Ocr failed')
+    expect(getOcrStatusPresentation('ocr_failed').label).toBe(
+      'Status desconhecido'
+    )
   })
 })

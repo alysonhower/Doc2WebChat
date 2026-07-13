@@ -22,20 +22,24 @@ describe('PromptLibraryView', () => {
     }
     render(<PromptLibraryView prompts={[prompt]} onPromptsChange={vi.fn()} />)
 
-    const name = screen.getByLabelText('Prompt name')
+    const name = screen.getByLabelText('Nome do prompt')
     await user.clear(name)
     await user.type(name, 'Unsaved name')
     await user.click(screen.getByRole('button', { name: /extract facts/i }))
     expect(loadPrompt).not.toHaveBeenCalled()
     expect(
-      screen.getByRole('dialog', { name: 'Discard unsaved changes?' })
+      screen.getByRole('dialog', {
+        name: 'Descartar alterações não salvas?'
+      })
     ).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
     expect(name).toHaveValue('Unsaved name')
 
     await user.click(screen.getByRole('button', { name: /extract facts/i }))
-    await user.click(screen.getByRole('button', { name: 'Discard changes' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Descartar alterações' })
+    )
     await waitFor(() =>
       expect(loadPrompt).toHaveBeenCalledWith({ promptId: 7 })
     )
@@ -71,11 +75,11 @@ describe('PromptLibraryView', () => {
     const onPromptsChange = vi.fn()
     render(<PromptLibraryView prompts={[]} onPromptsChange={onPromptsChange} />)
 
-    const name = screen.getByLabelText('Prompt name')
+    const name = screen.getByLabelText('Nome do prompt')
     await user.clear(name)
     await user.type(name, 'Facts')
-    expect(screen.getByText('Not saved')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    expect(screen.getByText('Não salvo')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Salvar alterações' }))
     expect(savePrompt).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'Facts',
@@ -85,12 +89,12 @@ describe('PromptLibraryView', () => {
     expect(onPromptsChange).toHaveBeenCalledWith([saved])
 
     await user.click(
-      await screen.findByRole('button', { name: 'Delete prompt' })
+      await screen.findByRole('button', { name: 'Excluir prompt' })
     )
-    const dialog = screen.getByRole('dialog', { name: 'Delete “Facts”?' })
+    const dialog = screen.getByRole('dialog', { name: 'Excluir “Facts”?' })
     expect(deletePrompt).not.toHaveBeenCalled()
     await user.click(
-      within(dialog).getByRole('button', { name: 'Delete prompt' })
+      within(dialog).getByRole('button', { name: 'Excluir prompt' })
     )
     await waitFor(() =>
       expect(deletePrompt).toHaveBeenCalledWith({ promptId: 9 })
@@ -132,7 +136,7 @@ describe('PromptLibraryView', () => {
     const name = await screen.findByDisplayValue('Extract facts')
     await user.clear(name)
     await user.type(name, 'Extract details')
-    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    await user.click(screen.getByRole('button', { name: 'Salvar alterações' }))
 
     expect(savePrompt).toHaveBeenCalledWith({
       promptId: 7,
@@ -140,6 +144,6 @@ describe('PromptLibraryView', () => {
       document: emptyStructuredPrompt()
     })
     expect(renamePrompt).not.toHaveBeenCalled()
-    expect(await screen.findByText('Saved')).toBeInTheDocument()
+    expect(await screen.findByText('Salvo')).toBeInTheDocument()
   })
 })
