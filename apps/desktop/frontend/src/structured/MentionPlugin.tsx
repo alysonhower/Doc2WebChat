@@ -128,7 +128,7 @@ export function MentionPlugin({ knownNames }: MentionPluginProps) {
   if (!match) return null
 
   return (
-    <div className="mention-menu" role="listbox" aria-label="Tag suggestions">
+    <div className="mention-menu" role="listbox" aria-label="Sugestões de tags">
       {suggestions.map((name) => (
         <button
           type="button"
@@ -139,7 +139,7 @@ export function MentionPlugin({ knownNames }: MentionPluginProps) {
           onClick={() => insert(name)}
         >
           <span>@{name}</span>
-          <small>{name === preferredName ? 'Enter or Tab' : ''}</small>
+          <small>{name === preferredName ? 'Enter ou Tab' : ''}</small>
         </button>
       ))}
       {typedNameValid && !suggestions.includes(typedName) ? (
@@ -150,8 +150,8 @@ export function MentionPlugin({ knownNames }: MentionPluginProps) {
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => insert(typedName)}
         >
-          <span>Create @{typedName}</span>
-          <small>{preferredName === typedName ? 'Enter or Tab' : ''}</small>
+          <span>Criar @{typedName}</span>
+          <small>{preferredName === typedName ? 'Enter ou Tab' : ''}</small>
         </button>
       ) : null}
       {typedName.length > 0 && !typedNameValid ? (

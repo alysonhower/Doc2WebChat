@@ -36,11 +36,14 @@ function TagChip({
 }) {
   const context = useContext(TagEditorContext)
   const role = context.roles[occurrenceId] ?? 'reference'
+  const roleLabel =
+    role === 'definition' ? 'Define a resposta' : 'Usa a definição'
   return (
     <button
       className={`tag-chip tag-chip--${role}`}
       type="button"
-      title={`${name} · ${role}`}
+      title={`${name} · ${roleLabel}`}
+      aria-label={`${name} · ${roleLabel}`}
       onClick={() => context.onSelect(occurrenceId, name)}
       data-occurrence-id={occurrenceId}
       data-role={role}

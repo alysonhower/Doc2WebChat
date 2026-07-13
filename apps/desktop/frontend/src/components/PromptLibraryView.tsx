@@ -32,7 +32,7 @@ interface ConfirmationState {
 const newDraft = (): Draft => {
   const document = emptyStructuredPrompt()
   return {
-    name: 'Untitled prompt',
+    name: 'Prompt sem título',
     persistedName: '',
     document,
     baseline: clonePrompt(document)
@@ -56,11 +56,11 @@ export function PromptLibraryView({
     !promptEquals(draft.document, draft.baseline)
   const newDraftHasEdits =
     !draft.id &&
-    (draft.name !== 'Untitled prompt' ||
+    (draft.name !== 'Prompt sem título' ||
       !promptEquals(draft.document, draft.baseline))
   const shouldConfirmDiscard = draft.id ? dirty : newDraftHasEdits
   const sortedPrompts = useMemo(
-    () => [...prompts].sort((a, b) => a.name.localeCompare(b.name)),
+    () => [...prompts].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')),
     [prompts]
   )
 
@@ -182,11 +182,11 @@ export function PromptLibraryView({
     <section className="page" aria-labelledby="prompts-title">
       <header className="page-header">
         <div>
-          <span className="eyebrow">Reusable instructions</span>
-          <h1 id="prompts-title">Prompt Library</h1>
+          <span className="eyebrow">Instruções reutilizáveis</span>
+          <h1 id="prompts-title">Biblioteca de Prompts</h1>
           <p>
-            Build structured prompts with nested response tags, then load them
-            into any browser chat.
+            Crie prompts estruturados com tags de resposta aninhadas e use-os em
+            qualquer Chat no navegador.
           </p>
         </div>
         <button
@@ -195,13 +195,13 @@ export function PromptLibraryView({
           disabled={busy}
           onClick={requestCreate}
         >
-          New prompt
+          Novo prompt
         </button>
       </header>
       <div className="prompt-layout">
-        <aside className="card prompt-list" aria-label="Saved prompts">
+        <aside className="card prompt-list" aria-label="Prompts salvos">
           <div className="prompt-list__heading">
-            <strong>Saved prompts</strong>
+            <strong>Prompts salvos</strong>
             <span>{prompts.length}</span>
           </div>
           {sortedPrompts.length ? (
@@ -218,8 +218,8 @@ export function PromptLibraryView({
                   <strong>{prompt.name}</strong>
                   <small>
                     {prompt.updatedAt
-                      ? `Updated ${new Date(prompt.updatedAt).toLocaleDateString()}`
-                      : 'Saved prompt'}
+                      ? `Atualizado em ${new Date(prompt.updatedAt).toLocaleDateString('pt-BR')}`
+                      : 'Prompt salvo'}
                   </small>
                 </span>
               </button>
@@ -227,15 +227,15 @@ export function PromptLibraryView({
           ) : (
             <div className="empty-state empty-state--small">
               <LibraryIcon />
-              <strong>No saved prompts</strong>
-              <p>Create your first reusable instruction.</p>
+              <strong>Nenhum prompt salvo</strong>
+              <p>Crie sua primeira instrução reutilizável.</p>
             </div>
           )}
         </aside>
         <div className="card prompt-editor-card" aria-busy={busy}>
           <div className="prompt-toolbar">
             <div className="prompt-name-field">
-              <label htmlFor="prompt-name">Prompt name</label>
+              <label htmlFor="prompt-name">Nome do prompt</label>
               <input
                 id="prompt-name"
                 value={draft.name}
@@ -252,8 +252,8 @@ export function PromptLibraryView({
                 <button
                   className="icon-button icon-button--danger"
                   type="button"
-                  title="Delete prompt"
-                  aria-label="Delete prompt"
+                  title="Excluir prompt"
+                  aria-label="Excluir prompt"
                   disabled={busy}
                   onClick={requestRemove}
                 >
@@ -268,24 +268,24 @@ export function PromptLibraryView({
                 }
                 onClick={() => void save()}
               >
-                {busy ? 'Saving…' : 'Save changes'}
+                {busy ? 'Salvando…' : 'Salvar alterações'}
               </button>
             </div>
           </div>
           {!draft.id ? (
             <div className="draft-indicator">
               <span />
-              Not saved
+              Não salvo
             </div>
           ) : dirty ? (
             <div className="draft-indicator">
               <span />
-              Unsaved changes
+              Alterações não salvas
             </div>
           ) : (
             <div className="draft-indicator draft-indicator--saved">
               <span />
-              Saved
+              Salvo
             </div>
           )}
           <StructuredPromptEditor
@@ -305,18 +305,20 @@ export function PromptLibraryView({
         open={confirmation !== null}
         title={
           confirmation?.kind === 'delete'
-            ? `Delete “${draft.persistedName}”?`
-            : 'Discard unsaved changes?'
+            ? `Excluir “${draft.persistedName}”?`
+            : 'Descartar alterações não salvas?'
         }
         description={
           confirmation?.kind === 'delete'
             ? dirty
-              ? 'This prompt and its unsaved changes will be permanently deleted.'
-              : 'This prompt will be permanently deleted. This cannot be undone.'
-            : 'Your edits to this prompt will be lost.'
+              ? 'Este prompt e suas alterações não salvas serão excluídos permanentemente.'
+              : 'Este prompt será excluído permanentemente. Esta ação não pode ser desfeita.'
+            : 'As alterações feitas neste prompt serão perdidas.'
         }
         confirmLabel={
-          confirmation?.kind === 'delete' ? 'Delete prompt' : 'Discard changes'
+          confirmation?.kind === 'delete'
+            ? 'Excluir prompt'
+            : 'Descartar alterações'
         }
         danger={confirmation?.kind === 'delete'}
         busy={busy}

@@ -16,7 +16,16 @@ from typing import Any, Protocol, cast
 
 import webview
 
-from doc2webchat.database import Database, DatabaseError, canonical_path
+from doc2webchat.database import (
+    MAX_BULK_DELETE_ITEMS,
+    Database,
+    DatabaseError,
+    DocumentDeletionBlockedError,
+    DocumentNotFoundError,
+    InteractionDeletionBlockedError,
+    InteractionNotFoundError,
+    canonical_path,
+)
 from doc2webchat.errors import AppError, failure, success
 from doc2webchat.ocr import (
     MAX_OVERWRITE_CONFLICT_PATHS,
@@ -228,6 +237,63 @@ def require_integer(request: dict[str, Any], key: str) -> int:
             "invalid-request", f"{key} must be a positive integer", field=key
         )
     return value
+
+
+def require_uuid(request: dict[str, Any], key: str) -> str:
+    value = require_string(request, key, maximum=36)
+    try:
+        return str(uuid.UUID(value))
+    except ValueError as error:
+        raise AppError("invalid-request", f"{key} must be a UUID", field=key) from error
+
+
+def require_integer_array(request: dict[str, Any], key: str) -> list[int]:
+    value = request.get(key)
+    if not isinstance(value, list) or not value or len(value) > MAX_BULK_DELETE_ITEMS:
+        raise AppError(
+            "invalid-request",
+            f"{key} must be a non-empty array of at most {MAX_BULK_DELETE_ITEMS} items",
+            field=key,
+        )
+    if any(
+        isinstance(item, bool) or not isinstance(item, int) or item < 1
+        for item in value
+    ):
+        raise AppError(
+            "invalid-request", f"{key} must contain positive integers", field=key
+        )
+    if len(set(value)) != len(value):
+        raise AppError(
+            "invalid-request", f"{key} must contain unique values", field=key
+        )
+    return value
+
+
+def require_uuid_array(request: dict[str, Any], key: str) -> list[str]:
+    value = request.get(key)
+    if not isinstance(value, list) or not value or len(value) > MAX_BULK_DELETE_ITEMS:
+        raise AppError(
+            "invalid-request",
+            f"{key} must be a non-empty array of at most {MAX_BULK_DELETE_ITEMS} items",
+            field=key,
+        )
+    normalized: list[str] = []
+    for item in value:
+        if not isinstance(item, str) or len(item) > 36:
+            raise AppError(
+                "invalid-request", f"{key} must contain UUID strings", field=key
+            )
+        try:
+            normalized.append(str(uuid.UUID(item)))
+        except ValueError as error:
+            raise AppError(
+                "invalid-request", f"{key} must contain UUID strings", field=key
+            ) from error
+    if len(set(normalized)) != len(normalized):
+        raise AppError(
+            "invalid-request", f"{key} must contain unique values", field=key
+        )
+    return normalized
 
 
 class DesktopApi:
@@ -481,6 +547,50 @@ class DesktopApi:
     def list_documents(self) -> dict[str, Any]:
         return self.safely(self.database.list_documents)
 
+    def delete_document(self, value: Any) -> dict[str, Any]:
+        def operation() -> dict[str, int]:
+            request = require_request(value)
+            document_id = require_integer(request, "documentId")
+            if self.ocr_manager.active_job_id is not None:
+                raise AppError(
+                    "document-deletion-blocked",
+                    "Documents cannot be deleted while an OCR batch is active or awaiting "
+                    "overwrite confirmation",
+                )
+            try:
+                self.database.delete_document(document_id)
+            except DocumentDeletionBlockedError as error:
+                raise AppError("document-deletion-blocked", str(error)) from error
+            except DocumentNotFoundError as error:
+                raise AppError(
+                    "document-not-found", str(error), field="documentId"
+                ) from error
+            return {"documentId": document_id}
+
+        return self.safely(operation)
+
+    def delete_documents(self, value: Any) -> dict[str, Any]:
+        def operation() -> dict[str, list[int]]:
+            request = require_request(value)
+            document_ids = require_integer_array(request, "documentIds")
+            if self.ocr_manager.active_job_id is not None:
+                raise AppError(
+                    "document-deletion-blocked",
+                    "Documents cannot be deleted while an OCR batch is active or awaiting "
+                    "overwrite confirmation",
+                )
+            try:
+                self.database.delete_documents(document_ids)
+            except DocumentDeletionBlockedError as error:
+                raise AppError("document-deletion-blocked", str(error)) from error
+            except DocumentNotFoundError as error:
+                raise AppError(
+                    "document-not-found", str(error), field="documentIds"
+                ) from error
+            return {"documentIds": document_ids}
+
+        return self.safely(operation)
+
     def list_prompts(self) -> dict[str, Any]:
         return self.safely(self.database.list_prompts)
 
@@ -671,6 +781,46 @@ class DesktopApi:
 
     def list_history(self) -> dict[str, Any]:
         return self.safely(self.database.list_history)
+
+    def delete_interaction(self, value: Any) -> dict[str, Any]:
+        def operation() -> dict[str, str]:
+            request = require_request(value)
+            interaction_id = require_uuid(request, "interactionId")
+            try:
+                self.database.delete_interaction(interaction_id)
+            except InteractionDeletionBlockedError as error:
+                raise AppError(
+                    "interaction-deletion-blocked",
+                    str(error),
+                    field="interactionId",
+                ) from error
+            except InteractionNotFoundError as error:
+                raise AppError(
+                    "interaction-not-found", str(error), field="interactionId"
+                ) from error
+            return {"interactionId": interaction_id}
+
+        return self.safely(operation)
+
+    def delete_interactions(self, value: Any) -> dict[str, Any]:
+        def operation() -> dict[str, list[str]]:
+            request = require_request(value)
+            interaction_ids = require_uuid_array(request, "interactionIds")
+            try:
+                self.database.delete_interactions(interaction_ids)
+            except InteractionDeletionBlockedError as error:
+                raise AppError(
+                    "interaction-deletion-blocked",
+                    str(error),
+                    field="interactionIds",
+                ) from error
+            except InteractionNotFoundError as error:
+                raise AppError(
+                    "interaction-not-found", str(error), field="interactionIds"
+                ) from error
+            return {"interactionIds": interaction_ids}
+
+        return self.safely(operation)
 
     def consume_bridge_events(self) -> None:
         bridge = self.bridge
@@ -927,6 +1077,12 @@ class WebviewApi:
     def list_documents(self) -> dict[str, Any]:
         return self._backend.list_documents()
 
+    def delete_document(self, request: Any) -> dict[str, Any]:
+        return self._backend.delete_document(request)
+
+    def delete_documents(self, request: Any) -> dict[str, Any]:
+        return self._backend.delete_documents(request)
+
     def list_prompts(self) -> dict[str, Any]:
         return self._backend.list_prompts()
 
@@ -950,3 +1106,9 @@ class WebviewApi:
 
     def list_history(self) -> dict[str, Any]:
         return self._backend.list_history()
+
+    def delete_interaction(self, request: Any) -> dict[str, Any]:
+        return self._backend.delete_interaction(request)
+
+    def delete_interactions(self, request: Any) -> dict[str, Any]:
+        return self._backend.delete_interactions(request)

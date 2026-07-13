@@ -13,9 +13,9 @@ export const show_response_ready_notification = async (params: {
 
   if (permission == 'granted') {
     const notification = new Notification(
-      `${params.chatbot_name} response is ready`,
+      `${params.chatbot_name}: resposta pronta`,
       {
-        body: 'Return to the chat and use Import response to bring it into Doc2WebChat.',
+        body: 'Volte ao chat e use Importar resposta para trazê-la ao Doc2WebChat.',
         tag: 'doc2webchat'
       }
     )

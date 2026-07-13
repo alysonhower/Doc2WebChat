@@ -1,4 +1,10 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within
+} from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { BootstrapState, PyWebviewApi } from './api/contracts'
 import App from './App'
@@ -76,10 +82,10 @@ describe('App', () => {
 
     render(<App />)
     expect(
-      await screen.findByRole('heading', { name: 'Documents' })
+      await screen.findByRole('heading', { name: 'Documentos' })
     ).toBeInTheDocument()
-    expect(await screen.findByText('1 of 3 files')).toBeInTheDocument()
-    expect(screen.getByText('Processing')).toBeInTheDocument()
+    expect(await screen.findByText('1 de 3 arquivos')).toBeInTheDocument()
+    expect(screen.getByText('Processando')).toBeInTheDocument()
     expect(pollEvents).toHaveBeenCalledWith({ after: 0, timeoutMs: 20_000 })
   })
 
@@ -131,10 +137,14 @@ describe('App', () => {
     render(<App />)
 
     expect(
-      await screen.findByRole('heading', { name: '1 file already exists' })
+      await screen.findByRole(
+        'heading',
+        { name: '1 arquivo já existe' },
+        { timeout: 3_000 }
+      )
     ).toBeInTheDocument()
-    expect(screen.getByText('Review required')).toBeInTheDocument()
-    expect(screen.getByText('Waiting for confirmation')).toBeInTheDocument()
+    expect(screen.getByText('Revisão necessária')).toBeInTheDocument()
+    expect(screen.getByText('Aguardando confirmação')).toBeInTheDocument()
   })
 
   it('restores overwrite confirmation from bootstrap without an event', async () => {
@@ -176,7 +186,7 @@ describe('App', () => {
     render(<App />)
 
     expect(
-      await screen.findByRole('heading', { name: '2 files already exist' })
+      await screen.findByRole('heading', { name: '2 arquivos já existem' })
     ).toBeInTheDocument()
     expect(screen.getByText('C:\\restored-output\\scan.pdf')).toBeVisible()
     expect(screen.getByText('C:\\restored-output\\letter.pdf')).toBeVisible()
@@ -186,7 +196,7 @@ describe('App', () => {
     installDesktopApi()
     render(<App />)
 
-    await screen.findByRole('heading', { name: 'Documents' })
+    await screen.findByRole('heading', { name: 'Documentos' })
     const documents = screen.getByTestId('view-panel-documents')
     const chat = screen.getByTestId('view-panel-chat')
     const history = screen.getByTestId('view-panel-history')
@@ -202,7 +212,7 @@ describe('App', () => {
     expect(documents).toHaveAttribute('hidden')
     expect(chat).not.toHaveAttribute('hidden')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Documents' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Documentos' }))
     expect(documents).not.toHaveAttribute('hidden')
     expect(documents.scrollTop).toBe(147)
   })
@@ -211,14 +221,212 @@ describe('App', () => {
     installDesktopApi()
     render(<App />)
 
-    await screen.findByRole('heading', { name: 'Documents' })
-    fireEvent.click(screen.getByRole('button', { name: 'Dark theme' }))
+    await screen.findByRole('heading', { name: 'Documentos' })
+    fireEvent.click(screen.getByRole('button', { name: 'Tema escuro' }))
 
     expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
     expect(window.localStorage.getItem('doc2webchat-theme')).toBe('dark')
-    expect(screen.getByRole('button', { name: 'Dark theme' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Tema escuro' })).toHaveAttribute(
       'aria-pressed',
       'true'
     )
+  })
+
+  it('removes a deleted document from the shared app context immediately', async () => {
+    const deleteDocument = vi.fn(async () => ({
+      ok: true as const,
+      value: { documentId: 9 }
+    }))
+    window.pywebview = {
+      api: {
+        get_bootstrap_state: vi.fn(async () => ({
+          ok: true as const,
+          value: {
+            ...emptyBootstrap,
+            documents: [
+              {
+                id: 9,
+                inputPath: 'C:\\source\\scan.pdf',
+                resultAvailable: true,
+                latestStatus: 'completed'
+              }
+            ]
+          }
+        })),
+        poll_events: vi.fn(() => new Promise<never>(() => undefined)),
+        delete_document: deleteDocument
+      } as unknown as PyWebviewApi
+    }
+
+    render(<App />)
+    await screen.findByText('source/scan.pdf')
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Excluir documento source/scan.pdf'
+      })
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir documento' }))
+
+    await waitFor(() =>
+      expect(deleteDocument).toHaveBeenCalledWith({ documentId: 9 })
+    )
+    expect(screen.queryByText('source/scan.pdf')).toBeNull()
+  })
+
+  it('removes a deleted terminal Thread and shows the empty state', async () => {
+    const interactionId = '00000000-0000-4000-8000-000000000009'
+    const deleteInteraction = vi.fn(async () => ({
+      ok: true as const,
+      value: { interactionId }
+    }))
+    window.pywebview = {
+      api: {
+        get_bootstrap_state: vi.fn(async () => ({
+          ok: true as const,
+          value: {
+            ...emptyBootstrap,
+            history: [
+              {
+                interactionId,
+                providerId: 'open-webui',
+                status: 'completed',
+                createdAt: '2026-01-02T00:00:00Z',
+                messages: []
+              }
+            ]
+          }
+        })),
+        poll_events: vi.fn(() => new Promise<never>(() => undefined)),
+        delete_interaction: deleteInteraction
+      } as unknown as PyWebviewApi
+    }
+
+    render(<App />)
+    await screen.findByRole('heading', { name: 'Documentos' })
+    fireEvent.click(screen.getByRole('button', { name: 'Threads' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir Thread' }))
+    const dialog = screen.getByRole('dialog', { name: 'Excluir Thread?' })
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: 'Excluir Thread' })
+    )
+
+    await waitFor(() =>
+      expect(deleteInteraction).toHaveBeenCalledWith({ interactionId })
+    )
+    expect(screen.getByText('Nenhuma Thread ainda')).toBeInTheDocument()
+  })
+
+  it('deletes selected documents through one atomic desktop request', async () => {
+    const deleteDocuments = vi.fn(async () => ({
+      ok: true as const,
+      value: { documentIds: [2, 9] }
+    }))
+    window.pywebview = {
+      api: {
+        get_bootstrap_state: vi.fn(async () => ({
+          ok: true as const,
+          value: {
+            ...emptyBootstrap,
+            documents: [
+              {
+                id: 9,
+                inputPath: 'C:\\source\\nine.pdf',
+                resultAvailable: true,
+                latestStatus: 'completed'
+              },
+              {
+                id: 2,
+                inputPath: 'C:\\source\\two.pdf',
+                resultAvailable: true,
+                latestStatus: 'completed'
+              }
+            ]
+          }
+        })),
+        poll_events: vi.fn(() => new Promise<never>(() => undefined)),
+        delete_documents: deleteDocuments
+      } as unknown as PyWebviewApi
+    }
+
+    render(<App />)
+    await screen.findByText('source/two.pdf')
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: 'Selecionar todos os documentos' })
+    )
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Excluir selecionados' })
+    )
+    const dialog = screen.getByRole('dialog', {
+      name: 'Excluir 2 documentos?'
+    })
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: 'Excluir documentos' })
+    )
+
+    await waitFor(() =>
+      expect(deleteDocuments).toHaveBeenCalledWith({ documentIds: [2, 9] })
+    )
+    expect(screen.queryByText('source/two.pdf')).toBeNull()
+    expect(screen.queryByText('source/nine.pdf')).toBeNull()
+  })
+
+  it('deletes selected terminal Threads through one atomic desktop request', async () => {
+    const olderId = '00000000-0000-4000-8000-000000000002'
+    const newerId = '00000000-0000-4000-8000-000000000009'
+    const deleteInteractions = vi.fn(async () => ({
+      ok: true as const,
+      value: { interactionIds: [newerId, olderId] }
+    }))
+    window.pywebview = {
+      api: {
+        get_bootstrap_state: vi.fn(async () => ({
+          ok: true as const,
+          value: {
+            ...emptyBootstrap,
+            history: [
+              {
+                interactionId: olderId,
+                providerId: 'open-webui',
+                status: 'failed',
+                createdAt: '2026-01-02T00:00:00Z',
+                messages: []
+              },
+              {
+                interactionId: newerId,
+                providerId: 'open-webui',
+                status: 'completed',
+                createdAt: '2026-01-03T00:00:00Z',
+                messages: []
+              }
+            ]
+          }
+        })),
+        poll_events: vi.fn(() => new Promise<never>(() => undefined)),
+        delete_interactions: deleteInteractions
+      } as unknown as PyWebviewApi
+    }
+
+    render(<App />)
+    await screen.findByRole('heading', { name: 'Documentos' })
+    fireEvent.click(screen.getByRole('button', { name: 'Threads' }))
+    fireEvent.click(
+      screen.getByRole('checkbox', {
+        name: 'Selecionar Threads finalizadas'
+      })
+    )
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Excluir selecionadas' })
+    )
+    const dialog = screen.getByRole('dialog', { name: 'Excluir 2 Threads?' })
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: 'Excluir 2 Threads' })
+    )
+
+    await waitFor(() =>
+      expect(deleteInteractions).toHaveBeenCalledWith({
+        interactionIds: [newerId, olderId]
+      })
+    )
+    expect(screen.getByText('Nenhuma Thread ainda')).toBeInTheDocument()
   })
 })

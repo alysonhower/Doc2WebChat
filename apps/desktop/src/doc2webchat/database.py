@@ -6,6 +6,7 @@ import os
 import queue
 import sqlite3
 import threading
+import uuid
 from collections.abc import Callable, Sequence
 from concurrent.futures import Future
 from datetime import UTC, datetime
@@ -142,10 +143,85 @@ MIGRATIONS = (
     """
     ALTER TABLE documents ADD COLUMN latest_output_path TEXT;
     """,
+    """
+    ALTER TABLE interaction_documents RENAME TO interaction_documents_legacy;
+    ALTER TABLE documents RENAME TO documents_legacy;
+
+    CREATE TABLE documents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        canonical_input_path TEXT NOT NULL UNIQUE,
+        successful_output_path TEXT,
+        successful_text TEXT,
+        result_available INTEGER NOT NULL DEFAULT 0 CHECK (result_available IN (0, 1)),
+        latest_job_id INTEGER,
+        latest_status TEXT NOT NULL,
+        latest_error TEXT,
+        latest_warning TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        latest_output_path TEXT
+    );
+
+    INSERT INTO documents(
+        id, canonical_input_path, successful_output_path, successful_text,
+        result_available, latest_job_id, latest_status, latest_error,
+        latest_warning, created_at, updated_at, latest_output_path
+    )
+    SELECT
+        id, canonical_input_path, successful_output_path, successful_text,
+        result_available, latest_job_id, latest_status, latest_error,
+        latest_warning, created_at, updated_at, latest_output_path
+    FROM documents_legacy;
+
+    CREATE TABLE interaction_documents (
+        interaction_id TEXT NOT NULL REFERENCES chat_interactions(interaction_id) ON DELETE CASCADE,
+        document_id INTEGER NOT NULL,
+        ordinal INTEGER NOT NULL,
+        PRIMARY KEY(interaction_id, document_id),
+        UNIQUE(interaction_id, ordinal)
+    );
+
+    INSERT INTO interaction_documents(interaction_id, document_id, ordinal)
+    SELECT interaction_id, document_id, ordinal
+    FROM interaction_documents_legacy;
+
+    DROP TABLE interaction_documents_legacy;
+    DROP TABLE documents_legacy;
+    """,
 )
+
+BLOCKING_OCR_JOB_STATUSES = frozenset(
+    {
+        "pending",
+        "discovering",
+        "planning",
+        "starting-server",
+        "running",
+        "awaiting-overwrite",
+        "overwrite-claimed",
+    }
+)
+DELETABLE_INTERACTION_STATUSES = frozenset({"completed", "failed", "expired"})
+MAX_BULK_DELETE_ITEMS = 1000
 
 
 class DatabaseError(RuntimeError):
+    pass
+
+
+class DocumentDeletionBlockedError(DatabaseError):
+    pass
+
+
+class DocumentNotFoundError(DatabaseError):
+    pass
+
+
+class InteractionDeletionBlockedError(DatabaseError):
+    pass
+
+
+class InteractionNotFoundError(DatabaseError):
     pass
 
 
@@ -765,6 +841,66 @@ class Database:
             ]
 
         return self.call(operation)
+
+    def delete_document(self, document_id: int) -> None:
+        self.delete_documents([document_id])
+
+    def delete_documents(self, document_ids: list[int]) -> None:
+        if (
+            not document_ids
+            or len(document_ids) > MAX_BULK_DELETE_ITEMS
+            or len(set(document_ids)) != len(document_ids)
+            or any(
+                isinstance(document_id, bool)
+                or not isinstance(document_id, int)
+                or document_id < 1
+                for document_id in document_ids
+            )
+        ):
+            raise ValueError("documentIds must contain unique positive integers")
+
+        def operation(connection: sqlite3.Connection) -> None:
+            status_placeholders = ", ".join("?" for _ in BLOCKING_OCR_JOB_STATUSES)
+            id_placeholders = ", ".join("?" for _ in document_ids)
+            with connection:
+                active_job = connection.execute(
+                    f"""
+                    SELECT 1 FROM ocr_jobs
+                    WHERE status IN ({status_placeholders})
+                    LIMIT 1
+                    """,
+                    tuple(sorted(BLOCKING_OCR_JOB_STATUSES)),
+                ).fetchone()
+                if active_job is not None:
+                    raise DocumentDeletionBlockedError(
+                        "Documents cannot be deleted while an OCR batch is active "
+                        "or awaiting overwrite confirmation"
+                    )
+                existing_ids = {
+                    int(row["id"])
+                    for row in connection.execute(
+                        f"SELECT id FROM documents WHERE id IN ({id_placeholders})",
+                        tuple(document_ids),
+                    ).fetchall()
+                }
+                missing_id = next(
+                    (
+                        document_id
+                        for document_id in document_ids
+                        if document_id not in existing_ids
+                    ),
+                    None,
+                )
+                if missing_id is not None:
+                    raise DocumentNotFoundError(f"Document {missing_id} not found")
+                cursor = connection.execute(
+                    f"DELETE FROM documents WHERE id IN ({id_placeholders})",
+                    tuple(document_ids),
+                )
+                if cursor.rowcount != len(document_ids):
+                    raise DatabaseError("Documents changed during deletion")
+
+        self.call(operation)
 
     def list_chat_documents(self) -> list[dict[str, Any]]:
         return self.call(
@@ -1399,6 +1535,77 @@ class Database:
             return history
 
         return self.call(operation)
+
+    def delete_interaction(self, interaction_id: str) -> None:
+        self.delete_interactions([interaction_id])
+
+    def delete_interactions(self, interaction_ids: list[str]) -> None:
+        if not interaction_ids or len(interaction_ids) > MAX_BULK_DELETE_ITEMS:
+            raise ValueError("interactionIds must contain unique interaction IDs")
+        try:
+            normalized_ids = [
+                str(uuid.UUID(interaction_id))
+                if isinstance(interaction_id, str) and len(interaction_id) <= 36
+                else ""
+                for interaction_id in interaction_ids
+            ]
+        except ValueError as error:
+            raise ValueError(
+                "interactionIds must contain unique UUID interaction IDs"
+            ) from error
+        if "" in normalized_ids or len(set(normalized_ids)) != len(normalized_ids):
+            raise ValueError("interactionIds must contain unique UUID interaction IDs")
+        interaction_ids = normalized_ids
+
+        def operation(connection: sqlite3.Connection) -> None:
+            placeholders = ", ".join("?" for _ in interaction_ids)
+            with connection:
+                statuses = {
+                    str(row["interaction_id"]): str(row["status"])
+                    for row in connection.execute(
+                        f"""
+                        SELECT interaction_id, status FROM chat_interactions
+                        WHERE interaction_id IN ({placeholders})
+                        """,
+                        tuple(interaction_ids),
+                    ).fetchall()
+                }
+                missing_id = next(
+                    (
+                        interaction_id
+                        for interaction_id in interaction_ids
+                        if interaction_id not in statuses
+                    ),
+                    None,
+                )
+                if missing_id is not None:
+                    raise InteractionNotFoundError(
+                        f"Interaction {missing_id} not found"
+                    )
+                blocked_id = next(
+                    (
+                        interaction_id
+                        for interaction_id in interaction_ids
+                        if statuses[interaction_id]
+                        not in DELETABLE_INTERACTION_STATUSES
+                    ),
+                    None,
+                )
+                if blocked_id is not None:
+                    raise InteractionDeletionBlockedError(
+                        "Only completed, failed, or expired interactions can be deleted"
+                    )
+                cursor = connection.execute(
+                    f"""
+                    DELETE FROM chat_interactions
+                    WHERE interaction_id IN ({placeholders})
+                    """,
+                    tuple(interaction_ids),
+                )
+                if cursor.rowcount != len(interaction_ids):
+                    raise DatabaseError("Interactions changed during deletion")
+
+        self.call(operation)
 
     def set_preference(self, key: str, value: Any) -> None:
         encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"))

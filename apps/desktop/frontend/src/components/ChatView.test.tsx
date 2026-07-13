@@ -27,7 +27,7 @@ describe('ChatView', () => {
         top_p: true,
         thinking_budget: true,
         system_instructions: { default: 'Helpful document assistant.' },
-        options: { grounding: 'Grounding' }
+        options: { search: 'Search' }
       }
     }
     const startInteraction = vi.fn(async () => ({
@@ -60,16 +60,21 @@ describe('ChatView', () => {
     )
 
     await user.click(
-      screen.getByText('Advanced provider settings', { selector: 'span' })
+      screen.getByText('Configurações avançadas do provedor', {
+        selector: 'span'
+      })
     )
-    await user.selectOptions(screen.getByLabelText('Model'), 'flash')
-    await user.type(screen.getByLabelText('Temperature'), '0.4')
+    await user.selectOptions(screen.getByLabelText('Modelo'), 'flash')
+    await user.type(screen.getByLabelText('Temperatura'), '0.4')
     await user.type(screen.getByLabelText('Top P'), '0.8')
-    await user.selectOptions(screen.getByLabelText('Reasoning effort'), 'High')
-    await user.type(screen.getByLabelText('Thinking budget'), '256')
-    await user.click(screen.getByLabelText('Grounding'))
-    expect(screen.getByText('6 changed')).toBeInTheDocument()
-    const send = screen.getByRole('button', { name: /open in browser/i })
+    await user.selectOptions(
+      screen.getByLabelText('Nível de raciocínio'),
+      'High'
+    )
+    await user.type(screen.getByLabelText('Limite de raciocínio'), '256')
+    await user.click(screen.getByLabelText('Pesquisa'))
+    expect(screen.getByText('6 alterações')).toBeInTheDocument()
+    const send = screen.getByRole('button', { name: /abrir no navegador/i })
     await waitFor(() => expect(send).toBeEnabled())
     await user.click(send)
 
@@ -85,7 +90,7 @@ describe('ChatView', () => {
           reasoning_effort: 'High',
           thinking_budget: 256,
           system_instructions: 'Helpful document assistant.',
-          options: ['grounding']
+          options: ['search']
         }
       })
     )
@@ -129,22 +134,24 @@ describe('ChatView', () => {
       />
     )
 
-    const savedPrompt = screen.getByLabelText('Saved prompt')
+    const savedPrompt = screen.getByLabelText('Prompt salvo')
     await user.selectOptions(savedPrompt, '1')
-    const editor = screen.getByLabelText('Instructions')
+    const editor = screen.getByLabelText('Instruções')
     await waitFor(() => expect(editor).toHaveTextContent('First'))
     await user.type(editor, ' edited')
     await user.selectOptions(savedPrompt, '2')
 
     expect(loadPrompt).toHaveBeenCalledTimes(1)
     expect(
-      screen.getByRole('dialog', { name: 'Replace edited instructions?' })
+      screen.getByRole('dialog', { name: 'Substituir instruções editadas?' })
     ).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
     expect(savedPrompt).toHaveValue('1')
 
     await user.selectOptions(savedPrompt, '2')
-    await user.click(screen.getByRole('button', { name: 'Load saved prompt' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Carregar prompt salvo' })
+    )
     await waitFor(() => expect(loadPrompt).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(editor).toHaveTextContent('Second'))
   })
@@ -199,18 +206,18 @@ describe('ChatView', () => {
     expect(
       screen.getByText('Unrelated historical response')
     ).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /open in browser/i }))
+    await user.click(
+      screen.getByRole('button', { name: /abrir no navegador/i })
+    )
 
     await waitFor(() =>
       expect(
         screen.queryByText('Unrelated historical response')
       ).not.toBeInTheDocument()
     )
-    expect(screen.getAllByText('Opening provider')).not.toHaveLength(0)
+    expect(screen.getAllByText('Abrindo provedor')).not.toHaveLength(0)
     expect(
-      screen.getAllByText(
-        'Preparing the prompt and opening it in your browser.'
-      )
+      screen.getAllByText('Preparando o prompt para abri-lo no navegador.')
     ).not.toHaveLength(0)
   })
 
@@ -225,7 +232,7 @@ describe('ChatView', () => {
     const { rerender } = render(
       <ChatView key="none" {...baseProps} browsers={[]} />
     )
-    expect(screen.getByText(/Extension offline/)).toBeInTheDocument()
+    expect(screen.getByText(/Extensão offline/)).toBeInTheDocument()
 
     rerender(
       <ChatView
@@ -234,7 +241,9 @@ describe('ChatView', () => {
         browsers={[{ browserInstanceId: 'one', label: 'Firefox' }]}
       />
     )
-    expect(screen.getByText('Using Firefox automatically.')).toBeInTheDocument()
+    expect(
+      screen.getByText('Usando Firefox automaticamente.')
+    ).toBeInTheDocument()
 
     rerender(
       <ChatView
@@ -247,7 +256,7 @@ describe('ChatView', () => {
       />
     )
     expect(
-      screen.getByText('Choose one of 2 connected browsers.')
+      screen.getByText('Selecione um dos 2 navegadores conectados.')
     ).toBeInTheDocument()
   })
 })

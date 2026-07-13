@@ -60,7 +60,7 @@ describe('StructuredPromptEditor', () => {
         onChange={(next) => values.push(next)}
       />
     )
-    const editor = screen.getByLabelText('Instructions')
+    const editor = screen.getByLabelText('Instruções')
 
     insertText(editor, 'temporary')
     await waitFor(() =>
@@ -77,16 +77,20 @@ describe('StructuredPromptEditor', () => {
 
   it('accepts a valid @tag with Enter and retains an invalid token with an inline error', async () => {
     render(<Harness />)
-    const editor = screen.getByLabelText('Instructions')
+    const editor = screen.getByLabelText('Instruções')
     insertText(editor, '@summary')
-    await screen.findByRole('listbox', { name: 'Tag suggestions' })
+    await screen.findByRole('option', { name: /Criar @summary/ })
     fireEvent.keyDown(editor, { key: 'Enter' })
-    expect(await screen.findByTitle('summary · definition')).toBeInTheDocument()
+    expect(
+      await screen.findByTitle('summary · Define a resposta')
+    ).toBeInTheDocument()
 
     insertText(editor, '@sum')
-    await screen.findByRole('listbox', { name: 'Tag suggestions' })
+    await screen.findByRole('option', { name: /Criar @sum/ })
     fireEvent.keyDown(editor, { key: 'Enter' })
-    expect(await screen.findByTitle('sum · definition')).toBeInTheDocument()
+    expect(
+      await screen.findByTitle('sum · Define a resposta')
+    ).toBeInTheDocument()
 
     insertText(editor, '@1bad')
     expect(await screen.findByRole('alert')).toHaveTextContent(
@@ -98,12 +102,14 @@ describe('StructuredPromptEditor', () => {
 
   it('does not replace an invalid token with a known suggestion', async () => {
     render(<Harness />)
-    const editor = screen.getByLabelText('Instructions')
+    const editor = screen.getByLabelText('Instruções')
 
     insertText(editor, '@tag1')
-    await screen.findByRole('listbox', { name: 'Tag suggestions' })
+    await screen.findByRole('listbox', { name: 'Sugestões de tags' })
     fireEvent.keyDown(editor, { key: 'Enter' })
-    expect(await screen.findByTitle('tag1 · definition')).toBeInTheDocument()
+    expect(
+      await screen.findByTitle('tag1 · Define a resposta')
+    ).toBeInTheDocument()
 
     insertText(editor, '@1')
     expect(await screen.findByRole('alert')).toBeInTheDocument()
@@ -111,25 +117,25 @@ describe('StructuredPromptEditor', () => {
     fireEvent.keyDown(editor, { key: 'Tab' })
 
     expect(editor).toHaveTextContent('@1')
-    expect(screen.getAllByTitle('tag1 · definition')).toHaveLength(1)
+    expect(screen.getAllByTitle('tag1 · Define a resposta')).toHaveLength(1)
   })
 
   it('supports nested tags and occurrence-only renaming', async () => {
     const values: StructuredPrompt[] = []
     const user = userEvent.setup()
     render(<Harness onValue={(value) => values.push(value)} />)
-    const root = screen.getByLabelText('Instructions')
+    const root = screen.getByLabelText('Instruções')
     insertText(root, '@summary')
-    await screen.findByRole('listbox', { name: 'Tag suggestions' })
+    await screen.findByRole('listbox', { name: 'Sugestões de tags' })
     fireEvent.keyDown(root, { key: 'Tab' })
-    const chip = await screen.findByTitle('summary · definition')
+    const chip = await screen.findByTitle('summary · Define a resposta')
     await user.click(chip)
 
     const nested = await screen.findByLabelText(
-      'Nested instruction for summary'
+      'Instrução aninhada para summary'
     )
     insertText(nested, 'include @date')
-    await screen.findByRole('listbox', { name: 'Tag suggestions' })
+    await screen.findByRole('listbox', { name: 'Sugestões de tags' })
     fireEvent.keyDown(nested, { key: 'Tab' })
     await waitFor(() => {
       const latest = values.at(-1)!
@@ -140,9 +146,9 @@ describe('StructuredPromptEditor', () => {
       )
     })
 
-    const rename = screen.getByLabelText('Occurrence name')
+    const rename = screen.getByLabelText('Nome da tag')
     fireEvent.change(rename, { target: { value: 'overview' } })
-    await user.click(screen.getByRole('button', { name: 'Rename' }))
+    await user.click(screen.getByRole('button', { name: 'Renomear' }))
     await waitFor(() =>
       expect(values.at(-1)?.root.nodes).toEqual([
         expect.objectContaining({ type: 'tag', name: 'overview' }),
@@ -156,20 +162,18 @@ describe('StructuredPromptEditor', () => {
     const values: StructuredPrompt[] = []
     render(<Harness onValue={(value) => values.push(value)} />)
 
-    const root = screen.getByLabelText('Instructions')
+    const root = screen.getByLabelText('Instruções')
     insertText(root, '@summary')
     await user.click(
-      await screen.findByRole('option', { name: /Create @summary/ })
+      await screen.findByRole('option', { name: /Criar @summary/ })
     )
-    await user.click(await screen.findByTitle('summary · definition'))
+    await user.click(await screen.findByTitle('summary · Define a resposta'))
 
     const nested = await screen.findByLabelText(
-      'Nested instruction for summary'
+      'Instrução aninhada para summary'
     )
     insertText(nested, '@date')
-    await user.click(
-      await screen.findByRole('option', { name: /Create @date/ })
-    )
+    await user.click(await screen.findByRole('option', { name: /Criar @date/ }))
     await waitFor(() =>
       expect(values.at(-1)?.definitions.summary?.nodes).toEqual(
         expect.arrayContaining([

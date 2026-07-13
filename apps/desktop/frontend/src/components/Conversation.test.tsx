@@ -63,22 +63,22 @@ describe('Conversation', () => {
       />
     )
 
-    const summary = screen.getByLabelText('Outgoing prompt summary')
+    const summary = screen.getByLabelText('Resumo do prompt enviado')
     expect(summary).toHaveTextContent('Compare the documents.')
-    expect(summary).toHaveTextContent('20,000 bytes')
-    expect(summary).toHaveTextContent('Documents 2, 7')
+    expect(summary).toHaveTextContent('20.000 bytes')
+    expect(summary).toHaveTextContent('Documentos 2, 7')
     const content = screen.getByTestId('progressive-content-1')
     expect(content.textContent).toHaveLength(1_200)
-    await user.click(screen.getByRole('button', { name: /show more/i }))
+    await user.click(screen.getByRole('button', { name: /mostrar mais/i }))
     expect(content.textContent).toHaveLength(9_200)
-    expect(screen.getByRole('button', { name: /show all/i })).toBeVisible()
+    expect(screen.getByRole('button', { name: /mostrar tudo/i })).toBeVisible()
     expect(
       summary.compareDocumentPosition(content) &
         Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy()
   })
 
-  it('limits long assistant responses and omits Show all above 100,000 characters', async () => {
+  it('limits long assistant responses and omits Mostrar tudo above 100,000 characters', async () => {
     const user = userEvent.setup()
     render(
       <Conversation
@@ -101,8 +101,8 @@ describe('Conversation', () => {
 
     const content = screen.getByTestId('progressive-content-9')
     expect(content.textContent).toHaveLength(4_000)
-    expect(screen.queryByRole('button', { name: /show all/i })).toBeNull()
-    await user.click(screen.getByRole('button', { name: /show more/i }))
+    expect(screen.queryByRole('button', { name: /mostrar tudo/i })).toBeNull()
+    await user.click(screen.getByRole('button', { name: /mostrar mais/i }))
     expect(content.textContent).toHaveLength(12_000)
   })
 
@@ -131,8 +131,9 @@ describe('Conversation', () => {
               ],
               warnings: [
                 {
-                  code: 'missing-required',
-                  message: 'A required child is missing.',
+                  code: 'missing-child',
+                  message: 'Tag <result> is missing child <source>',
+                  tagName: 'source',
                   parentIndex: 0
                 }
               ]
@@ -149,8 +150,9 @@ describe('Conversation', () => {
         Node.DOCUMENT_POSITION_CONTAINED_BY
     ).toBeTruthy()
     expect(
-      screen.getByRole('region', { name: 'Response warnings' })
-    ).toHaveTextContent('Inside @result')
+      screen.getByRole('region', { name: 'Avisos da resposta' })
+    ).toHaveTextContent('Dentro de @result')
+    expect(screen.getByText(/não contém a tag filha <source>/)).toBeVisible()
   })
 
   it('uses an actionable lifecycle label instead of a raw status', () => {
@@ -165,7 +167,7 @@ describe('Conversation', () => {
         }}
       />
     )
-    expect(screen.getByText('Ready to import')).toBeInTheDocument()
+    expect(screen.getByText('Pronta para importar')).toBeInTheDocument()
     expect(screen.queryByText('awaiting-import')).toBeNull()
   })
 })

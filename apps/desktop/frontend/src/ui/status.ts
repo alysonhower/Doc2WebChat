@@ -9,169 +9,172 @@ export interface StatusPresentation {
 
 function humanizeStatus(status: string): string {
   const normalized = status.trim().replaceAll('_', '-').replaceAll('-', ' ')
-  if (!normalized) return 'Unknown'
-  return normalized[0].toUpperCase() + normalized.slice(1)
+  if (!normalized) return 'Desconhecido'
+  return 'Status desconhecido'
 }
 
 const interactionStatuses: Record<string, StatusPresentation> = {
   created: {
-    label: 'Opening provider',
+    label: 'Abrindo provedor',
     tone: 'info',
-    guidance: 'Preparing the prompt and opening it in your browser.',
+    guidance: 'Preparando o prompt para abri-lo no navegador.',
     active: true
   },
   dispatched: {
-    label: 'Opening provider',
+    label: 'Abrindo provedor',
     tone: 'info',
-    guidance: 'Preparing the prompt and opening it in your browser.',
+    guidance: 'Preparando o prompt para abri-lo no navegador.',
     active: true
   },
   prefilled: {
-    label: 'Ready to submit',
+    label: 'Pronta para enviar',
     tone: 'info',
-    guidance: 'Review the prompt in your browser, then submit it.',
+    guidance: 'Revise o prompt no navegador e envie quando estiver pronto.',
     active: true
   },
   'awaiting-response': {
-    label: 'Waiting for response',
+    label: 'Aguardando resposta',
     tone: 'info',
-    guidance: 'The provider is generating a response in your browser.',
+    guidance: 'O provedor está gerando uma resposta no navegador.',
     active: true
   },
   'waiting-response': {
-    label: 'Waiting for response',
+    label: 'Aguardando resposta',
     tone: 'info',
-    guidance: 'The provider is generating a response in your browser.',
+    guidance: 'O provedor está gerando uma resposta no navegador.',
     active: true
   },
   'awaiting-import': {
-    label: 'Ready to import',
+    label: 'Pronta para importar',
     tone: 'info',
-    guidance: 'Use Import Response beside the new browser response.',
+    guidance: 'Use Importar resposta ao lado da nova resposta no navegador.',
     active: true
   },
   importing: {
-    label: 'Importing response',
+    label: 'Importando resposta',
     tone: 'info',
-    guidance: 'Copying the browser response into your local history.',
+    guidance: 'Copiando a resposta do navegador para esta Thread.',
     active: true
   },
   completed: {
-    label: 'Imported',
+    label: 'Importada',
     tone: 'success',
-    guidance: 'The browser response was imported successfully.',
+    guidance: 'A resposta do navegador foi importada com sucesso.',
     active: false
   },
   failed: {
-    label: 'Failed',
+    label: 'Falhou',
     tone: 'danger',
     guidance:
-      'The interaction could not finish. Review the error and try again.',
+      'Não foi possível concluir a Thread. Revise o erro e tente novamente.',
     active: false
   },
   expired: {
-    label: 'Expired',
+    label: 'Expirada',
     tone: 'warning',
-    guidance: 'This browser handoff expired. Start a new chat to try again.',
+    guidance:
+      'Esta transferência expirou. Inicie um novo Chat para tentar novamente.',
     active: false
   }
 }
 
 const ocrStatuses: Record<string, StatusPresentation> = {
   pending: {
-    label: 'Preparing',
+    label: 'Preparando',
     tone: 'info',
-    guidance: 'Preparing the OCR batch.',
+    guidance: 'Preparando o lote de OCR.',
     active: true
   },
   discovering: {
-    label: 'Finding files',
+    label: 'Procurando arquivos',
     tone: 'info',
-    guidance: 'Finding supported files in the input folder.',
+    guidance: 'Procurando arquivos compatíveis na pasta de entrada.',
     active: true
   },
   planning: {
-    label: 'Checking outputs',
+    label: 'Verificando saídas',
     tone: 'info',
-    guidance: 'Checking output paths and existing files.',
+    guidance: 'Verificando caminhos de saída e arquivos existentes.',
     active: true
   },
   'starting-server': {
-    label: 'Starting OCR',
+    label: 'Iniciando OCR',
     tone: 'info',
-    guidance: 'Starting the local OCR service.',
+    guidance: 'Iniciando o serviço local de OCR.',
     active: true
   },
   queued: {
-    label: 'Queued',
+    label: 'Na fila',
     tone: 'neutral',
-    guidance: 'Waiting to process this file.',
+    guidance: 'Aguardando o processamento deste arquivo.',
     active: true
   },
   running: {
-    label: 'Processing',
+    label: 'Processando',
     tone: 'info',
-    guidance: 'Converting documents and extracting searchable text.',
+    guidance: 'Convertendo documentos e extraindo texto pesquisável.',
     active: true
   },
   processing: {
-    label: 'Processing',
+    label: 'Processando',
     tone: 'info',
-    guidance: 'Running OCR on this file.',
+    guidance: 'Executando OCR neste arquivo.',
     active: true
   },
   writing: {
-    label: 'Writing PDF',
+    label: 'Gravando PDF',
     tone: 'info',
-    guidance: 'Writing the searchable PDF safely.',
+    guidance: 'Gravando o PDF pesquisável com segurança.',
     active: true
   },
   extracting: {
-    label: 'Extracting text',
+    label: 'Extraindo texto',
     tone: 'info',
-    guidance: 'Reading searchable text from the completed PDF.',
+    guidance: 'Lendo o texto pesquisável do PDF concluído.',
     active: true
   },
   persisting: {
-    label: 'Saving result',
+    label: 'Salvando resultado',
     tone: 'info',
-    guidance: 'Saving the OCR result to the local library.',
+    guidance: 'Salvando o resultado do OCR na biblioteca local.',
     active: true
   },
   'awaiting-overwrite': {
-    label: 'Review required',
+    label: 'Revisão necessária',
     tone: 'warning',
-    guidance: 'Confirm whether the listed output files may be replaced.',
+    guidance:
+      'Confirme se os arquivos de saída listados podem ser substituídos.',
     active: false
   },
   completed: {
-    label: 'Completed',
+    label: 'Concluído',
     tone: 'success',
-    guidance: 'OCR completed successfully.',
+    guidance: 'OCR concluído com sucesso.',
     active: false
   },
   'completed-with-errors': {
-    label: 'Completed with issues',
+    label: 'Concluído com problemas',
     tone: 'warning',
-    guidance: 'Some files could not be processed. Review the results below.',
+    guidance:
+      'Alguns arquivos não puderam ser processados. Revise os resultados abaixo.',
     active: false
   },
   failed: {
-    label: 'Failed',
+    label: 'Falhou',
     tone: 'danger',
-    guidance: 'OCR could not finish. Review the error and try again.',
+    guidance: 'O OCR não pôde ser concluído. Revise o erro e tente novamente.',
     active: false
   },
   interrupted: {
-    label: 'Interrupted',
+    label: 'Interrompido',
     tone: 'warning',
-    guidance: 'The application stopped before OCR completed.',
+    guidance: 'O aplicativo foi encerrado antes da conclusão do OCR.',
     active: false
   },
   skipped: {
-    label: 'Skipped',
+    label: 'Ignorado',
     tone: 'neutral',
-    guidance: 'This file was intentionally skipped.',
+    guidance: 'Este arquivo foi ignorado conforme solicitado.',
     active: false
   }
 }

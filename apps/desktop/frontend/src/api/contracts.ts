@@ -221,6 +221,12 @@ export interface PyWebviewApi {
   list_documents(): Promise<
     BridgeResult<{ documents: DocumentRow[] } | DocumentRow[]>
   >
+  delete_document(input: {
+    documentId: number
+  }): Promise<BridgeResult<{ documentId: number }>>
+  delete_documents(input: {
+    documentIds: number[]
+  }): Promise<BridgeResult<{ documentIds: number[] }>>
   list_prompts(): Promise<BridgeResult<{ prompts: PromptRow[] } | PromptRow[]>>
   load_prompt(input: {
     promptId: number
@@ -253,6 +259,12 @@ export interface PyWebviewApi {
   list_history(): Promise<
     BridgeResult<{ history: InteractionRow[] } | InteractionRow[]>
   >
+  delete_interaction(input: {
+    interactionId: string
+  }): Promise<BridgeResult<{ interactionId: string }>>
+  delete_interactions(input: {
+    interactionIds: string[]
+  }): Promise<BridgeResult<{ interactionIds: string[] }>>
 }
 
 declare global {

@@ -26,7 +26,7 @@ export function ConfirmDialog({
   title,
   description,
   confirmLabel,
-  cancelLabel = 'Cancel',
+  cancelLabel = 'Cancelar',
   danger = false,
   busy = false,
   onConfirm,
@@ -123,7 +123,7 @@ export function ConfirmDialog({
             disabled={busy}
             onClick={onConfirm}
           >
-            {busy ? 'Working…' : confirmLabel}
+            {busy ? 'Processando…' : confirmLabel}
           </button>
         </div>
       </div>
