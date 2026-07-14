@@ -84,6 +84,11 @@ describe('DocumentsView', () => {
     )
 
     expect(screen.getByText('Iniciando OCR')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'O primeiro download do mecanismo OCR pode levar vários minutos'
+      )
+    ).toBeInTheDocument()
     const indeterminateProgress = screen.getByRole('progressbar')
     expect(indeterminateProgress).not.toHaveAttribute('aria-valuenow')
     expect(indeterminateProgress).toHaveAttribute(
@@ -327,7 +332,7 @@ describe('DocumentsView', () => {
       />
     )
 
-    expect(screen.getByText('Falhou')).toBeInTheDocument()
+    expect(screen.getAllByText('Falhou')).toHaveLength(2)
     expect(screen.getByRole('alert')).toHaveTextContent(
       'The OCR server stopped unexpectedly.'
     )

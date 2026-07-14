@@ -405,10 +405,93 @@ def test_managed_container_command_publishes_loopback_only(
 
     monkeypatch.setattr("doc2webchat.ocr.subprocess.run", run)
     create_managed_container(10)
-    command = commands[0]
+    command = commands[-1]
     assert "127.0.0.1:8000:8000" in command
     assert "127.0.0.1:50051:50051" in command
     assert "8000:8000" not in command
+    assert command[command.index("--pull") + 1] == "never"
+    assert "PIPELINE_POOL_SIZE=1" in command
+    assert "doc2webchat.managed.config=cpu-single-pipeline-v1" in command
+
+
+def test_managed_container_retries_transient_image_pull(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import subprocess
+
+    from doc2webchat.ocr import SERVER_CONTAINER_IMAGE, create_managed_container
+
+    commands: list[list[str]] = []
+    results = iter(
+        [
+            subprocess.CompletedProcess(
+                [], 1, "[]", f"No such image: {SERVER_CONTAINER_IMAGE}"
+            ),
+            subprocess.CompletedProcess(
+                [],
+                1,
+                "",
+                "failed to do request: Get https://example.invalid/layer: EOF",
+            ),
+            subprocess.CompletedProcess([], 0, "pulled", ""),
+            subprocess.CompletedProcess([], 0, "container", ""),
+        ]
+    )
+    command_timeouts: list[float] = []
+
+    def run(arguments: list[str], **kwargs: Any):
+        commands.append(arguments)
+        command_timeouts.append(kwargs["timeout"])
+        return next(results)
+
+    sleeps: list[float] = []
+    monkeypatch.setattr("doc2webchat.ocr.subprocess.run", run)
+    monkeypatch.setattr("doc2webchat.ocr.time.monotonic", lambda: 100.0)
+    monkeypatch.setattr("doc2webchat.ocr.time.sleep", sleeps.append)
+
+    create_managed_container(10)
+
+    assert commands[:3] == [
+        ["docker", "image", "inspect", SERVER_CONTAINER_IMAGE],
+        ["docker", "pull", SERVER_CONTAINER_IMAGE],
+        ["docker", "pull", SERVER_CONTAINER_IMAGE],
+    ]
+    assert commands[3][:2] == ["docker", "run"]
+    assert command_timeouts == [1800.0, 1800.0, 1800.0, 10.0]
+    assert sleeps == [1.0]
+
+
+def test_managed_container_does_not_retry_permanent_pull_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import subprocess
+
+    from doc2webchat.ocr import SERVER_CONTAINER_IMAGE, create_managed_container
+
+    commands: list[list[str]] = []
+    results = iter(
+        [
+            subprocess.CompletedProcess(
+                [], 1, "[]", f"No such image: {SERVER_CONTAINER_IMAGE}"
+            ),
+            subprocess.CompletedProcess([], 1, "", "denied: permission denied"),
+        ]
+    )
+
+    def run(arguments: list[str], **kwargs: Any):
+        del kwargs
+        commands.append(arguments)
+        return next(results)
+
+    monkeypatch.setattr("doc2webchat.ocr.subprocess.run", run)
+
+    with pytest.raises(ServerLifecycleError, match="permission denied"):
+        create_managed_container(10)
+
+    assert commands == [
+        ["docker", "image", "inspect", SERVER_CONTAINER_IMAGE],
+        ["docker", "pull", SERVER_CONTAINER_IMAGE],
+    ]
 
 
 @pytest.mark.asyncio
@@ -776,6 +859,87 @@ def test_managed_container_early_exit_includes_log_tail(
 
     with pytest.raises(ServerLifecycleError, match="fatal engine log"):
         ocr.ensure_server_ready(ocr.DEFAULT_BASE_URL, 10)
+
+
+def test_new_container_gets_full_readiness_window_after_image_download(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = {"value": 0.0}
+    readiness = iter([ServerReadiness.UNAVAILABLE, ServerReadiness.READY])
+    containers = iter([None, ManagedContainer(True, "running", 0)])
+    create_timeouts: list[float] = []
+
+    monkeypatch.setattr(ocr.time, "monotonic", lambda: clock["value"])
+    monkeypatch.setattr(
+        ocr.time,
+        "sleep",
+        lambda seconds: clock.__setitem__("value", clock["value"] + seconds),
+    )
+    monkeypatch.setattr(
+        ocr, "probe_server_readiness", lambda base_url, timeout: next(readiness)
+    )
+    monkeypatch.setattr(ocr, "ensure_docker", lambda timeout: None)
+    monkeypatch.setattr(
+        ocr, "inspect_managed_container", lambda timeout: next(containers)
+    )
+
+    def create(timeout: float) -> None:
+        create_timeouts.append(timeout)
+        clock["value"] += 600
+
+    monkeypatch.setattr(ocr, "create_managed_container", create)
+
+    ocr.ensure_server_ready(ocr.DEFAULT_BASE_URL, 10)
+
+    assert create_timeouts == [10]
+    assert clock["value"] == 601
+
+
+def test_outdated_starting_managed_container_is_replaced(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import subprocess
+
+    clock = {"value": 0.0}
+    readiness = iter([ServerReadiness.STARTING, ServerReadiness.READY])
+    containers = iter(
+        [
+            ManagedContainer(True, "running", 0, configuration_matches=False),
+            ManagedContainer(True, "running", 0),
+        ]
+    )
+    commands: list[list[str]] = []
+    create_timeouts: list[float] = []
+
+    monkeypatch.setattr(ocr.time, "monotonic", lambda: clock["value"])
+    monkeypatch.setattr(
+        ocr.time,
+        "sleep",
+        lambda seconds: clock.__setitem__("value", clock["value"] + seconds),
+    )
+    monkeypatch.setattr(
+        ocr, "probe_server_readiness", lambda base_url, timeout: next(readiness)
+    )
+    monkeypatch.setattr(
+        ocr, "inspect_managed_container", lambda timeout: next(containers)
+    )
+    monkeypatch.setattr(
+        ocr,
+        "run_command",
+        lambda arguments, timeout: (
+            commands.append(arguments)
+            or subprocess.CompletedProcess(arguments, 0, "", "")
+        ),
+    )
+    monkeypatch.setattr(
+        ocr, "create_managed_container", lambda timeout: create_timeouts.append(timeout)
+    )
+
+    ocr.ensure_server_ready(ocr.DEFAULT_BASE_URL, 10)
+
+    assert commands == [["docker", "rm", "--force", ocr.SERVER_CONTAINER_NAME]]
+    assert create_timeouts == [10]
+    assert clock["value"] == 1
 
 
 def test_atomic_skip_handles_publish_race(

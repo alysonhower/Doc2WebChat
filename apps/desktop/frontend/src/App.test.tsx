@@ -85,7 +85,7 @@ describe('App', () => {
       await screen.findByRole('heading', { name: 'Documentos' })
     ).toBeInTheDocument()
     expect(await screen.findByText('1 de 3 arquivos')).toBeInTheDocument()
-    expect(screen.getByText('Processando')).toBeInTheDocument()
+    expect(screen.getAllByText('Processando')).toHaveLength(2)
     expect(pollEvents).toHaveBeenCalledWith({ after: 0, timeoutMs: 20_000 })
   })
 
@@ -143,7 +143,7 @@ describe('App', () => {
         { timeout: 3_000 }
       )
     ).toBeInTheDocument()
-    expect(screen.getByText('Revisão necessária')).toBeInTheDocument()
+    expect(screen.getAllByText('Revisão necessária')).toHaveLength(2)
     expect(screen.getByText('Aguardando confirmação')).toBeInTheDocument()
   })
 

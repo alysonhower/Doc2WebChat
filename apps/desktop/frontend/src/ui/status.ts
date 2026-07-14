@@ -7,6 +7,12 @@ export interface StatusPresentation {
   active: boolean
 }
 
+interface OcrEventStatus {
+  stage?: unknown
+  status?: unknown
+  type?: unknown
+}
+
 function humanizeStatus(status: string): string {
   const normalized = status.trim().replaceAll('_', '-').replaceAll('-', ' ')
   if (!normalized) return 'Desconhecido'
@@ -202,4 +208,25 @@ export function getOcrStatusPresentation(status: string): StatusPresentation {
     ocrStatuses[status.trim().toLowerCase().replaceAll('_', '-')] ??
     fallback(status)
   )
+}
+
+export function getOcrEventStatusPresentation(
+  event: OcrEventStatus
+): StatusPresentation {
+  const stage = String(event.stage ?? event.status ?? event.type ?? '')
+    .trim()
+    .toLowerCase()
+    .replaceAll('_', '-')
+  if (stage === 'job-finished') {
+    return getOcrStatusPresentation(String(event.status ?? 'completed'))
+  }
+  const statusAliases: Record<string, string> = {
+    discovery: 'discovering',
+    'plan-validation': 'planning',
+    'server-startup': 'starting-server',
+    progress: 'running',
+    'job-failed': 'failed',
+    'overwrite-confirmation-required': 'awaiting-overwrite'
+  }
+  return getOcrStatusPresentation(statusAliases[stage] ?? stage)
 }

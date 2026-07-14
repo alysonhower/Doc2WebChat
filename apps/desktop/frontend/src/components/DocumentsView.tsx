@@ -2,7 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { errorMessage, invoke } from '../api/client'
 import type { AppEvent, DocumentRow, OcrJobState } from '../api/contracts'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
-import { getOcrStatusPresentation } from '../ui/status'
+import {
+  getOcrEventStatusPresentation,
+  getOcrStatusPresentation
+} from '../ui/status'
 import { ArrowIcon, FolderIcon, RefreshIcon, TrashIcon } from './Icons'
 
 interface DocumentsViewProps {
@@ -535,9 +538,11 @@ export function DocumentsView({
                     ? `${overwriteConfirmation.conflictCount} ${overwriteConfirmation.conflictCount === 1 ? 'saída existente' : 'saídas existentes'}`
                     : activeJob.status === 'failed'
                       ? 'Lote interrompido'
-                      : activeJob.total
-                        ? `${processedCount} de ${activeJob.total} arquivos`
-                        : 'Planejando arquivos'}
+                      : activeJob.status === 'starting-server'
+                        ? 'O primeiro download do mecanismo OCR pode levar vários minutos'
+                        : activeJob.total
+                          ? `${processedCount} de ${activeJob.total} arquivos`
+                          : 'Planejando arquivos'}
                 </span>
               </div>
               <div
@@ -588,11 +593,7 @@ export function DocumentsView({
                     <span />
                     <div>
                       <strong>
-                        {
-                          getOcrStatusPresentation(
-                            String(event.stage ?? event.status ?? event.type)
-                          ).label
-                        }
+                        {getOcrEventStatusPresentation(event).label}
                       </strong>
                       {event.file ? (
                         <small>{shortPath(event.file)}</small>
