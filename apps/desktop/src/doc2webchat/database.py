@@ -10,11 +10,37 @@ import uuid
 from collections.abc import Callable, Sequence
 from concurrent.futures import Future
 from datetime import UTC, datetime
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, TypeVar, cast
 
+from doc2webchat.ocr_contract import (
+    OcrDocumentStatus,
+    OcrFileStage,
+    OcrFileStatus,
+    OcrJobStatus,
+)
+
 Result = TypeVar("Result")
 DatabaseOperation = Callable[[sqlite3.Connection], Any]
+
+
+def require_contract_enum[ContractEnum: StrEnum](
+    value: ContractEnum, enum_type: type[ContractEnum], name: str
+) -> ContractEnum:
+    if not isinstance(value, enum_type):
+        raise TypeError(f"{name} must be a {enum_type.__name__}")
+    return value
+
+
+def parse_contract_enum[ContractEnum: StrEnum](
+    value: object, enum_type: type[ContractEnum], name: str
+) -> ContractEnum:
+    try:
+        return enum_type(value)
+    except (TypeError, ValueError) as error:
+        raise DatabaseError(f"Invalid persisted {name}: {value!r}") from error
+
 
 MIGRATIONS = (
     """
@@ -411,7 +437,11 @@ class Database:
             ).fetchone()
             if row is None:
                 raise DatabaseError(f"OCR job {job_id} not found")
-            return dict(row)
+            value = dict(row)
+            value["status"] = parse_contract_enum(
+                value["status"], OcrJobStatus, "OCR job status"
+            ).value
+            return value
 
         return self.call(operation)
 
@@ -432,6 +462,10 @@ class Database:
             ).fetchone()
             if row is None:
                 return None
+            job = dict(row)
+            job["status"] = parse_contract_enum(
+                job["status"], OcrJobStatus, "OCR job status"
+            ).value
             conflicts = connection.execute(
                 """
                 SELECT id, source_path, output_path
@@ -442,7 +476,7 @@ class Database:
                 (int(row["id"]),),
             ).fetchall()
             return {
-                **dict(row),
+                **job,
                 "conflicts": [
                     {
                         "id": int(conflict["id"]),
@@ -534,8 +568,14 @@ class Database:
 
         self.call(operation)
 
-    def set_overwrite_confirmation_status(self, job_id: int, status: str) -> None:
-        if status not in {"overwrite-confirmed", "overwrite-declined"}:
+    def set_overwrite_confirmation_status(
+        self, job_id: int, status: OcrJobStatus
+    ) -> None:
+        require_contract_enum(status, OcrJobStatus, "OCR job status")
+        if status not in {
+            OcrJobStatus.OVERWRITE_CONFIRMED,
+            OcrJobStatus.OVERWRITE_DECLINED,
+        }:
             raise ValueError("Invalid overwrite confirmation status")
 
         def operation(connection: sqlite3.Connection) -> None:
@@ -611,7 +651,7 @@ class Database:
     def update_ocr_job(
         self,
         job_id: int,
-        status: str,
+        status: OcrJobStatus,
         *,
         total_files: int | None = None,
         completed_files: int | None = None,
@@ -619,8 +659,10 @@ class Database:
         skipped_files: int | None = None,
         finished: bool = False,
     ) -> None:
+        require_contract_enum(status, OcrJobStatus, "OCR job status")
+
         def operation(connection: sqlite3.Connection) -> None:
-            values: dict[str, Any] = {"status": status}
+            values: dict[str, Any] = {"status": status.value}
             if total_files is not None:
                 values["total_files"] = total_files
             if completed_files is not None:
@@ -633,7 +675,7 @@ class Database:
                 values["completed_at"] = timestamp()
             assignments = ", ".join(f"{key} = ?" for key in values)
             parameters = list(values.values())
-            if status == "running":
+            if status is OcrJobStatus.RUNNING:
                 assignments += ", started_at = COALESCE(started_at, ?)"
                 parameters.append(timestamp())
             with connection:
@@ -645,8 +687,14 @@ class Database:
         self.call(operation)
 
     def create_ocr_job_file(
-        self, job_id: int, source_path: str, output_path: str, status: str = "queued"
+        self,
+        job_id: int,
+        source_path: str,
+        output_path: str,
+        status: OcrFileStage = OcrFileStage.QUEUED,
     ) -> int:
+        require_contract_enum(status, OcrFileStage, "OCR file stage")
+
         def operation(connection: sqlite3.Connection) -> int:
             now = timestamp()
             with connection:
@@ -660,8 +708,8 @@ class Database:
                         job_id,
                         canonical_path(source_path),
                         canonical_path(output_path),
-                        status,
-                        status,
+                        status.value,
+                        OcrFileStatus(status.value).value,
                         now,
                         now,
                     ),
@@ -673,12 +721,15 @@ class Database:
     def update_ocr_job_file(
         self,
         file_id: int,
-        stage: str,
-        status: str,
+        stage: OcrFileStage,
+        status: OcrFileStatus,
         *,
         error: str | None = None,
         warning: str | None = None,
     ) -> None:
+        require_contract_enum(stage, OcrFileStage, "OCR file stage")
+        require_contract_enum(status, OcrFileStatus, "OCR file status")
+
         def operation(connection: sqlite3.Connection) -> None:
             with connection:
                 connection.execute(
@@ -687,7 +738,7 @@ class Database:
                     SET stage = ?, status = ?, error = ?, warning = ?, updated_at = ?
                     WHERE id = ?
                     """,
-                    (stage, status, error, warning, timestamp(), file_id),
+                    (stage.value, status.value, error, warning, timestamp(), file_id),
                 )
 
         self.call(operation)
@@ -773,12 +824,13 @@ class Database:
     def record_document_failure(
         self,
         input_path: str,
-        status: str,
+        status: OcrDocumentStatus,
         error: str,
         job_id: int,
         *,
         output_path: str | None = None,
     ) -> int:
+        require_contract_enum(status, OcrDocumentStatus, "OCR document status")
         canonical_input = canonical_path(input_path)
 
         def operation(connection: sqlite3.Connection) -> int:
@@ -802,7 +854,7 @@ class Database:
                     (
                         canonical_input,
                         job_id,
-                        status,
+                        status.value,
                         error,
                         now,
                         now,
@@ -831,7 +883,11 @@ class Database:
                     "outputPath": row["successful_output_path"],
                     "text": row["successful_text"],
                     "resultAvailable": bool(row["result_available"]),
-                    "latestStatus": row["latest_status"],
+                    "latestStatus": parse_contract_enum(
+                        row["latest_status"],
+                        OcrDocumentStatus,
+                        "OCR document status",
+                    ).value,
                     "latestError": row["latest_error"],
                     "latestWarning": row["latest_warning"],
                     "latestOutputPath": row["latest_output_path"],

@@ -1,4 +1,14 @@
 import type { StructuredPrompt } from '../structured/types'
+import {
+  OCR_DOCUMENT_STATUSES,
+  OCR_EVENT_STAGES,
+  OCR_JOB_STATUSES
+} from './ocr-contract.generated'
+import type {
+  OcrDocumentStatus,
+  OcrEventStage,
+  OcrJobStatus
+} from './ocr-contract.generated'
 
 export interface BridgeError {
   code: string
@@ -18,7 +28,7 @@ export interface DocumentRow {
   latestOutputPath?: string | null
   text?: string | null
   resultAvailable: boolean
-  latestStatus: string
+  latestStatus: OcrDocumentStatus
   latestWarning?: string | null
   latestError?: string | null
   updatedAt?: string
@@ -152,7 +162,7 @@ export interface StoredProviderSettings extends ProviderSettings {
 
 export interface OcrJobState {
   jobId: string | number
-  status: string
+  status: OcrJobStatus
   completed: number
   failed: number
   skipped: number
@@ -176,10 +186,43 @@ export interface BootstrapState {
   activeJob?: OcrJobState | null
 }
 
-export interface AppEvent {
+interface EventBase {
   sequence: number
   type: string
   timestamp?: string
+  [key: string]: unknown
+}
+
+interface OcrEventBase extends EventBase {
+  type: 'ocr'
+  jobId: string | number
+  stage: OcrEventStage
+  completed?: number
+  failed?: number
+  skipped?: number
+  total?: number | null
+  file?: string
+  message?: string
+  error?: string
+  inputPath?: string
+  outputPath?: string
+  recursive?: boolean
+  conflictCount?: number
+  conflictingOutputs?: string[]
+  overwriteConfirmationJobId?: string | number
+}
+
+export type OcrEvent =
+  | (OcrEventBase & {
+      stage: 'job-finished'
+      status: Extract<OcrJobStatus, 'completed' | 'completed-with-errors'>
+    })
+  | (OcrEventBase & {
+      stage: Exclude<OcrEventStage, 'job-finished'>
+      status?: never
+    })
+
+export interface GenericAppEvent extends EventBase {
   jobId?: string | number
   interactionId?: string
   interaction_id?: string
@@ -199,7 +242,46 @@ export interface AppEvent {
   conflictCount?: number
   conflictingOutputs?: string[]
   overwriteConfirmationJobId?: string | number
-  [key: string]: unknown
+}
+
+export type AppEvent = OcrEvent | GenericAppEvent
+
+const ocrEventStages = new Set<string>(OCR_EVENT_STAGES)
+const ocrJobStatuses = new Set<string>(OCR_JOB_STATUSES)
+const ocrDocumentStatuses = new Set<string>(OCR_DOCUMENT_STATUSES)
+
+export function validateOcrEvent(event: AppEvent): void {
+  if (event.type !== 'ocr') return
+  if (typeof event.stage !== 'string' || !ocrEventStages.has(event.stage))
+    throw new Error(
+      `OCR contract violation: invalid event stage ${String(event.stage)}`
+    )
+  if (
+    event.stage === 'job-finished' &&
+    event.status !== 'completed' &&
+    event.status !== 'completed-with-errors'
+  )
+    throw new Error(
+      `OCR contract violation: invalid final status ${String(event.status)}`
+    )
+}
+
+export function isOcrEvent(event: AppEvent): event is OcrEvent {
+  return event.type === 'ocr'
+}
+
+export function validateOcrJobState(job: OcrJobState | null | undefined): void {
+  if (job && !ocrJobStatuses.has(job.status))
+    throw new Error(`OCR contract violation: invalid job status ${job.status}`)
+}
+
+export function validateOcrDocuments(documents: DocumentRow[]): void {
+  for (const document of documents) {
+    if (!ocrDocumentStatuses.has(document.latestStatus))
+      throw new Error(
+        `OCR contract violation: invalid document status ${document.latestStatus}`
+      )
+  }
 }
 
 export interface PyWebviewApi {

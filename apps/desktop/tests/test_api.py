@@ -21,6 +21,7 @@ from doc2webchat.ocr import (
     OutputPolicy,
     output_approval_key,
 )
+from doc2webchat.ocr_contract import OcrFileStage, OcrJobStatus
 from doc2webchat.providers import ProviderRegistry
 
 
@@ -431,12 +432,12 @@ def test_bootstrap_recovers_latest_pending_overwrite_confirmation(
             pending_id,
             str(input_path / f"page-{index:02d}.png"),
             str(output),
-            "awaiting-overwrite",
+            OcrFileStage.AWAITING_OVERWRITE,
         )
         expected_outputs.append(canonical_path(output))
     database.update_ocr_job(
         pending_id,
-        "awaiting-overwrite",
+        OcrJobStatus.AWAITING_OVERWRITE,
         total_files=conflict_total,
         finished=True,
     )
@@ -477,18 +478,20 @@ def test_confirmation_is_bound_to_pending_job_and_approves_only_its_outputs(
             pending_id,
             str(input_path / f"{index}.png"),
             str(output),
-            "awaiting-overwrite",
+            OcrFileStage.AWAITING_OVERWRITE,
         )
-    database.update_ocr_job(pending_id, "awaiting-overwrite", finished=True)
+    database.update_ocr_job(pending_id, OcrJobStatus.AWAITING_OVERWRITE, finished=True)
 
     unrelated_id = database.create_ocr_job("other-in", "other-out", False, "error")
     database.create_ocr_job_file(
         unrelated_id,
         "other-in/a.png",
         "other-out/a.pdf",
-        "awaiting-overwrite",
+        OcrFileStage.AWAITING_OVERWRITE,
     )
-    database.update_ocr_job(unrelated_id, "awaiting-overwrite", finished=True)
+    database.update_ocr_job(
+        unrelated_id, OcrJobStatus.AWAITING_OVERWRITE, finished=True
+    )
     started: list[OcrJobRequest] = []
 
     def start_job(request: OcrJobRequest) -> int:
@@ -558,9 +561,9 @@ def test_concurrent_confirmation_consumption_starts_exactly_one_retry(
         pending_id,
         str(input_path / "page.png"),
         str(output_path / "page.pdf"),
-        "awaiting-overwrite",
+        OcrFileStage.AWAITING_OVERWRITE,
     )
-    database.update_ocr_job(pending_id, "awaiting-overwrite", finished=True)
+    database.update_ocr_job(pending_id, OcrJobStatus.AWAITING_OVERWRITE, finished=True)
 
     original_get = database.get_pending_overwrite_job
     both_read_pending = threading.Barrier(2)
@@ -624,9 +627,9 @@ def test_failed_confirmed_retry_releases_database_claim(
         pending_id,
         str(input_path / "page.png"),
         str(output_path / "page.pdf"),
-        "awaiting-overwrite",
+        OcrFileStage.AWAITING_OVERWRITE,
     )
-    database.update_ocr_job(pending_id, "awaiting-overwrite", finished=True)
+    database.update_ocr_job(pending_id, OcrJobStatus.AWAITING_OVERWRITE, finished=True)
     monkeypatch.setattr(
         value.ocr_manager,
         "start_job",

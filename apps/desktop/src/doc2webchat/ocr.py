@@ -22,6 +22,13 @@ from turboocr.errors import APIConnectionError, ProtocolError
 
 from doc2webchat.database import Database, DatabaseError
 from doc2webchat.errors import AppError
+from doc2webchat.ocr_contract import (
+    OcrDocumentStatus,
+    OcrEventStage,
+    OcrFileStage,
+    OcrFileStatus,
+    OcrJobStatus,
+)
 
 DEFAULT_BASE_URL = "http://localhost:8000"
 DEFAULT_MAX_INFLIGHT = 1
@@ -476,7 +483,7 @@ async def process_task(
     client: AsyncSourceClient,
     task: ProcessingTask,
     policy: OutputPolicy,
-    on_stage: Callable[[str], None],
+    on_stage: Callable[[OcrFileStage], None],
 ) -> ProcessedDocument:
     reject_symbolic_path(task.source_path, "Source path")
     readable_source = to_extended_path(task.source_path)
@@ -493,13 +500,13 @@ async def process_task(
         raise ValueError(f"Source path is a symbolic link: {task.source_path}")
     if not stat.S_ISREG(source_mode):
         raise ValueError(f"Source path is not a regular file: {task.source_path}")
-    on_stage("ocr-processing")
+    on_stage(OcrFileStage.OCR_PROCESSING)
     content = await client.make_searchable_pdf(readable_source, profile=PDFA_PROFILE)
-    on_stage("writing")
+    on_stage(OcrFileStage.WRITING)
     status = write_pdf_atomically(content, task.output_path, policy)
     if status is ProcessingStatus.SKIPPED:
         return ProcessedDocument(task, status, None)
-    on_stage("extracting")
+    on_stage(OcrFileStage.EXTRACTING)
     reject_symbolic_path(task.output_path, "Output path")
     published_output = to_extended_destination_path(task.output_path)
     if classify_destination(published_output) is not DestinationKind.REGULAR:
@@ -914,12 +921,35 @@ class OcrManager:
                     self.active_thread = None
         if deferred_event is not None:
             try:
-                self.emit(deferred_event)
+                self.emit_ocr_event(deferred_event)
             except Exception:
                 logger.exception("Could not emit deferred OCR overwrite confirmation")
 
-    def job_event(self, job_id: int, stage: str, **values: Any) -> None:
-        self.emit({"type": "ocr", "jobId": job_id, "stage": stage, **values})
+    def emit_ocr_event(self, event: dict[str, Any]) -> None:
+        if event.get("type") != "ocr":
+            raise TypeError("OCR event type must be 'ocr'")
+        try:
+            stage = OcrEventStage(event.get("stage"))
+        except (TypeError, ValueError) as error:
+            raise TypeError("OCR event stage must be an OcrEventStage") from error
+        if stage is OcrEventStage.JOB_FINISHED:
+            try:
+                status = OcrJobStatus(event.get("status"))
+            except (TypeError, ValueError) as error:
+                raise TypeError("Finished OCR event status is invalid") from error
+            if status not in {
+                OcrJobStatus.COMPLETED,
+                OcrJobStatus.COMPLETED_WITH_ERRORS,
+            }:
+                raise TypeError("Finished OCR event status is invalid")
+        self.emit(event)
+
+    def job_event(self, job_id: int, stage: OcrEventStage, **values: Any) -> None:
+        if not isinstance(stage, OcrEventStage):
+            raise TypeError("OCR event stage must be an OcrEventStage")
+        self.emit_ocr_event(
+            {"type": "ocr", "jobId": job_id, "stage": stage.value, **values}
+        )
 
     async def run_job(
         self,
@@ -929,14 +959,14 @@ class OcrManager:
         defer_overwrite_event: bool = False,
     ) -> dict[str, Any] | None:
         try:
-            self.database.update_ocr_job(job_id, "discovering")
-            self.job_event(job_id, "discovery", determinate=False)
+            self.database.update_ocr_job(job_id, OcrJobStatus.DISCOVERING)
+            self.job_event(job_id, OcrEventStage.DISCOVERY, determinate=False)
             ensure_output_dir(request.output_path)
             sources = discover_sources(
                 request.input_path, request.output_path, request.recursive
             )
-            self.database.update_ocr_job(job_id, "planning")
-            self.job_event(job_id, "plan-validation", determinate=False)
+            self.database.update_ocr_job(job_id, OcrJobStatus.PLANNING)
+            self.job_event(job_id, OcrEventStage.PLAN_VALIDATION, determinate=False)
             try:
                 plan = build_output_plan(
                     sources,
@@ -952,18 +982,18 @@ class OcrManager:
                         job_id,
                         str(task.source_path),
                         str(task.output_path),
-                        "awaiting-overwrite",
+                        OcrFileStage.AWAITING_OVERWRITE,
                     )
                 self.database.update_ocr_job(
                     job_id,
-                    "awaiting-overwrite",
+                    OcrJobStatus.AWAITING_OVERWRITE,
                     total_files=len(sources),
                     finished=True,
                 )
                 event = {
                     "type": "ocr",
                     "jobId": job_id,
-                    "stage": "overwrite-confirmation-required",
+                    "stage": OcrEventStage.OVERWRITE_CONFIRMATION_REQUIRED.value,
                     "overwriteConfirmationJobId": job_id,
                     "inputPath": str(request.input_path),
                     "outputPath": str(request.output_path),
@@ -978,10 +1008,12 @@ class OcrManager:
                 }
                 if defer_overwrite_event:
                     return event
-                self.emit(event)
+                self.emit_ocr_event(event)
                 return None
             total = len(plan.tasks) + len(plan.skipped_results)
-            self.database.update_ocr_job(job_id, "planning", total_files=total)
+            self.database.update_ocr_job(
+                job_id, OcrJobStatus.PLANNING, total_files=total
+            )
             completed = 0
             failed = 0
             skipped = 0
@@ -990,21 +1022,23 @@ class OcrManager:
                     job_id,
                     str(result.source_path),
                     str(result.output_path),
-                    "skipped",
+                    OcrFileStage.SKIPPED,
                 )
-                self.database.update_ocr_job_file(file_id, "skipped", "skipped")
+                self.database.update_ocr_job_file(
+                    file_id, OcrFileStage.SKIPPED, OcrFileStatus.SKIPPED
+                )
                 skipped += 1
                 completed += 1
                 self.job_event(
                     job_id,
-                    "skipped",
+                    OcrEventStage.SKIPPED,
                     file=str(result.source_path),
                     completed=completed,
                     total=total,
                 )
             self.database.update_ocr_job(
                 job_id,
-                "planning",
+                OcrJobStatus.PLANNING,
                 completed_files=completed,
                 skipped_files=skipped,
             )
@@ -1019,32 +1053,35 @@ class OcrManager:
             ]
             for _, task in task_files:
                 self.job_event(
-                    job_id, "queued", file=str(task.source_path), total=total
+                    job_id,
+                    OcrEventStage.QUEUED,
+                    file=str(task.source_path),
+                    total=total,
                 )
             if not plan.tasks:
                 self.database.update_ocr_job(
                     job_id,
-                    "completed",
+                    OcrJobStatus.COMPLETED,
                     completed_files=completed,
                     skipped_files=skipped,
                     finished=True,
                 )
                 self.job_event(
                     job_id,
-                    "job-finished",
-                    status="completed",
+                    OcrEventStage.JOB_FINISHED,
+                    status=OcrJobStatus.COMPLETED.value,
                     completed=completed,
                     failed=failed,
                     skipped=skipped,
                     total=total,
                 )
                 return
-            self.database.update_ocr_job(job_id, "starting-server")
-            self.job_event(job_id, "server-startup", determinate=False)
+            self.database.update_ocr_job(job_id, OcrJobStatus.STARTING_SERVER)
+            self.job_event(job_id, OcrEventStage.SERVER_STARTUP, determinate=False)
             await asyncio.to_thread(
                 self.ensure_ready, request.base_url, request.server_timeout
             )
-            self.database.update_ocr_job(job_id, "running")
+            self.database.update_ocr_job(job_id, OcrJobStatus.RUNNING)
             semaphore = asyncio.Semaphore(self.max_inflight)
             async with self.client_factory(base_url=request.base_url) as client:
 
@@ -1053,14 +1090,14 @@ class OcrManager:
                 ) -> tuple[
                     int,
                     ProcessingTask,
-                    str,
+                    OcrFileStage,
                     ProcessedDocument | None,
                     Exception | None,
                 ]:
                     async with semaphore:
-                        current_stage = "queued"
+                        current_stage = OcrFileStage.QUEUED
 
-                        def record_stage(stage: str) -> None:
+                        def record_stage(stage: OcrFileStage) -> None:
                             nonlocal current_stage
                             current_stage = stage
                             self.handle_file_stage(job_id, file_id, task, stage)
@@ -1093,12 +1130,15 @@ class OcrManager:
                         failed += 1
                         message = str(error)[:2048]
                         failure_status = {
-                            "ocr-processing": "ocr-failed",
-                            "writing": "write-failed",
-                            "extracting": "extract-failed",
-                        }.get(failure_stage, "processing-failed")
+                            OcrFileStage.OCR_PROCESSING: OcrDocumentStatus.OCR_FAILED,
+                            OcrFileStage.WRITING: OcrDocumentStatus.WRITE_FAILED,
+                            OcrFileStage.EXTRACTING: OcrDocumentStatus.EXTRACT_FAILED,
+                        }.get(failure_stage, OcrDocumentStatus.PROCESSING_FAILED)
                         self.database.update_ocr_job_file(
-                            file_id, failure_stage, "failed", error=message
+                            file_id,
+                            failure_stage,
+                            OcrFileStatus.FAILED,
+                            error=message,
                         )
                         self.database.record_document_failure(
                             str(task.source_path),
@@ -1109,38 +1149,49 @@ class OcrManager:
                         )
                         self.job_event(
                             job_id,
-                            "failed",
+                            OcrEventStage.FAILED,
                             file=str(task.source_path),
-                            failedStage=failure_stage,
+                            failedStage=failure_stage.value,
                             error=message,
                         )
                     elif result is None:
                         raise RuntimeError("OCR task returned no result")
                     elif result.status is ProcessingStatus.SKIPPED:
                         skipped += 1
-                        self.database.update_ocr_job_file(file_id, "skipped", "skipped")
-                        self.job_event(job_id, "skipped", file=str(task.source_path))
+                        self.database.update_ocr_job_file(
+                            file_id, OcrFileStage.SKIPPED, OcrFileStatus.SKIPPED
+                        )
+                        self.job_event(
+                            job_id,
+                            OcrEventStage.SKIPPED,
+                            file=str(task.source_path),
+                        )
                     elif not result.text or not result.text.strip():
                         failed += 1
                         message = "No searchable text could be extracted from the published PDF"
                         self.database.update_ocr_job_file(
                             file_id,
-                            "extracting",
-                            "failed",
+                            OcrFileStage.EXTRACTING,
+                            OcrFileStatus.FAILED,
                             error=message,
                         )
                         self.database.record_document_failure(
                             str(task.source_path),
-                            "extract-failed",
+                            OcrDocumentStatus.EXTRACT_FAILED,
                             message,
                             job_id,
                             output_path=str(task.output_path),
                         )
                         self.job_event(
-                            job_id, "failed", file=str(task.source_path), error=message
+                            job_id,
+                            OcrEventStage.FAILED,
+                            file=str(task.source_path),
+                            error=message,
                         )
                     else:
-                        self.handle_file_stage(job_id, file_id, task, "persisting")
+                        self.handle_file_stage(
+                            job_id, file_id, task, OcrFileStage.PERSISTING
+                        )
                         self.database.record_document_success(
                             str(task.source_path),
                             str(task.output_path),
@@ -1148,26 +1199,34 @@ class OcrManager:
                             job_id,
                         )
                         self.database.update_ocr_job_file(
-                            file_id, "completed", "completed"
+                            file_id,
+                            OcrFileStage.COMPLETED,
+                            OcrFileStatus.COMPLETED,
                         )
-                        self.job_event(job_id, "completed", file=str(task.source_path))
+                        self.job_event(
+                            job_id,
+                            OcrEventStage.COMPLETED,
+                            file=str(task.source_path),
+                        )
                     self.database.update_ocr_job(
                         job_id,
-                        "running",
+                        OcrJobStatus.RUNNING,
                         completed_files=completed,
                         failed_files=failed,
                         skipped_files=skipped,
                     )
                     self.job_event(
                         job_id,
-                        "progress",
+                        OcrEventStage.PROGRESS,
                         determinate=True,
                         completed=completed,
                         failed=failed,
                         skipped=skipped,
                         total=total,
                     )
-            final_status = "completed-with-errors" if failed else "completed"
+            final_status = (
+                OcrJobStatus.COMPLETED_WITH_ERRORS if failed else OcrJobStatus.COMPLETED
+            )
             self.database.update_ocr_job(
                 job_id,
                 final_status,
@@ -1178,8 +1237,8 @@ class OcrManager:
             )
             self.job_event(
                 job_id,
-                "job-finished",
-                status=final_status,
+                OcrEventStage.JOB_FINISHED,
+                status=final_status.value,
                 completed=completed,
                 failed=failed,
                 skipped=skipped,
@@ -1196,7 +1255,7 @@ class OcrManager:
         job = self.database.get_ocr_job(job_id)
         self.database.update_ocr_job(
             job_id,
-            "failed",
+            OcrJobStatus.FAILED,
             completed_files=int(job["completed_files"]),
             failed_files=int(job["failed_files"]) + len(unfinished),
             finished=True,
@@ -1205,20 +1264,20 @@ class OcrManager:
             try:
                 self.database.record_document_failure(
                     item["sourcePath"],
-                    "batch-failed",
+                    OcrDocumentStatus.BATCH_FAILED,
                     message,
                     job_id,
                     output_path=item["outputPath"],
                 )
             except DatabaseError:
                 logger.exception("Could not persist failed OCR document")
-        self.job_event(job_id, "job-failed", error=message)
+        self.job_event(job_id, OcrEventStage.JOB_FAILED, error=message)
 
     def handle_file_stage(
-        self, job_id: int, file_id: int, task: ProcessingTask, stage: str
+        self, job_id: int, file_id: int, task: ProcessingTask, stage: OcrFileStage
     ) -> None:
-        self.database.update_ocr_job_file(file_id, stage, "running")
-        self.job_event(job_id, stage, file=str(task.source_path))
+        self.database.update_ocr_job_file(file_id, stage, OcrFileStatus.RUNNING)
+        self.job_event(job_id, OcrEventStage(stage.value), file=str(task.source_path))
 
     def close(self) -> None:
         thread = self.active_thread

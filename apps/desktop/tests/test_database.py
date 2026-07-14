@@ -15,6 +15,12 @@ from doc2webchat.database import (
     InteractionDeletionBlockedError,
     InteractionNotFoundError,
 )
+from doc2webchat.ocr_contract import (
+    OcrDocumentStatus,
+    OcrFileStage,
+    OcrFileStatus,
+    OcrJobStatus,
+)
 
 
 @pytest.fixture
@@ -166,17 +172,27 @@ def test_overwrite_confirmations_survive_restart_and_load_all_conflicts(
     first = Database(path)
     confirmed_id = first.create_ocr_job("in-confirmed", "out-confirmed", False, "error")
     first.create_ocr_job_file(
-        confirmed_id, "in-confirmed/a.png", "out-confirmed/a.pdf", "awaiting-overwrite"
+        confirmed_id,
+        "in-confirmed/a.png",
+        "out-confirmed/a.pdf",
+        OcrFileStage.AWAITING_OVERWRITE,
     )
-    first.update_ocr_job(confirmed_id, "awaiting-overwrite", finished=True)
-    first.set_overwrite_confirmation_status(confirmed_id, "overwrite-confirmed")
+    first.update_ocr_job(confirmed_id, OcrJobStatus.AWAITING_OVERWRITE, finished=True)
+    first.set_overwrite_confirmation_status(
+        confirmed_id, OcrJobStatus.OVERWRITE_CONFIRMED
+    )
 
     declined_id = first.create_ocr_job("in-declined", "out-declined", False, "error")
     first.create_ocr_job_file(
-        declined_id, "in-declined/a.png", "out-declined/a.pdf", "awaiting-overwrite"
+        declined_id,
+        "in-declined/a.png",
+        "out-declined/a.pdf",
+        OcrFileStage.AWAITING_OVERWRITE,
     )
-    first.update_ocr_job(declined_id, "awaiting-overwrite", finished=True)
-    first.set_overwrite_confirmation_status(declined_id, "overwrite-declined")
+    first.update_ocr_job(declined_id, OcrJobStatus.AWAITING_OVERWRITE, finished=True)
+    first.set_overwrite_confirmation_status(
+        declined_id, OcrJobStatus.OVERWRITE_DECLINED
+    )
 
     pending_id = first.create_ocr_job("in-pending", "out-pending", True, "error")
     for name in ("a", "b"):
@@ -184,9 +200,14 @@ def test_overwrite_confirmations_survive_restart_and_load_all_conflicts(
             pending_id,
             f"in-pending/{name}.png",
             f"out-pending/{name}.pdf",
-            "awaiting-overwrite",
+            OcrFileStage.AWAITING_OVERWRITE,
         )
-    first.update_ocr_job(pending_id, "awaiting-overwrite", total_files=2, finished=True)
+    first.update_ocr_job(
+        pending_id,
+        OcrJobStatus.AWAITING_OVERWRITE,
+        total_files=2,
+        finished=True,
+    )
     assert first.claim_pending_overwrite_job(pending_id) is not None
     assert first.get_ocr_job(pending_id)["status"] == "overwrite-claimed"
     first.close()
@@ -221,9 +242,12 @@ def test_declining_pending_overwrites_preserves_excepted_job(
     kept_id = database.create_ocr_job("in-two", "out-two", False, "error")
     for job_id, name in ((declined_id, "one"), (kept_id, "two")):
         database.create_ocr_job_file(
-            job_id, f"in-{name}/a.png", f"out-{name}/a.pdf", "awaiting-overwrite"
+            job_id,
+            f"in-{name}/a.png",
+            f"out-{name}/a.pdf",
+            OcrFileStage.AWAITING_OVERWRITE,
         )
-        database.update_ocr_job(job_id, "awaiting-overwrite", finished=True)
+        database.update_ocr_job(job_id, OcrJobStatus.AWAITING_OVERWRITE, finished=True)
 
     assert database.decline_pending_overwrite_jobs(except_job_id=kept_id) == 1
     assert database.get_ocr_job(declined_id)["status"] == "overwrite-declined"
@@ -259,7 +283,7 @@ def test_document_failure_preserves_previous_success(database: Database) -> None
     )
     database.record_document_failure(
         "C:/in/a.png",
-        "extract_failed",
+        OcrDocumentStatus.EXTRACT_FAILED,
         "empty",
         2,
         output_path="C:/out/new-a.pdf",
@@ -269,14 +293,16 @@ def test_document_failure_preserves_previous_success(database: Database) -> None
     assert row["id"] == document_id
     assert row["text"] == "searchable"
     assert row["resultAvailable"] is True
-    assert row["latestStatus"] == "extract_failed"
+    assert row["latestStatus"] == "extract-failed"
     assert row["latestError"] == "empty"
     assert row["latestOutputPath"].endswith("new-a.pdf")
     assert [item["id"] for item in database.list_chat_documents()] == [document_id]
 
 
 def test_first_failure_is_not_chat_eligible(database: Database) -> None:
-    database.record_document_failure("C:/in/b.png", "ocr_failed", "bad", 1)
+    database.record_document_failure(
+        "C:/in/b.png", OcrDocumentStatus.OCR_FAILED, "bad", 1
+    )
     assert database.list_chat_documents() == []
 
 
@@ -287,8 +313,10 @@ def test_delete_document_removes_only_the_library_record_and_never_reuses_id(
     job_file_id = database.create_ocr_job_file(
         job_id, "C:/in/deleted.png", "C:/out/deleted.pdf"
     )
-    database.update_ocr_job_file(job_file_id, "completed", "completed")
-    database.update_ocr_job(job_id, "completed", finished=True)
+    database.update_ocr_job_file(
+        job_file_id, OcrFileStage.COMPLETED, OcrFileStatus.COMPLETED
+    )
+    database.update_ocr_job(job_id, OcrJobStatus.COMPLETED, finished=True)
     first_id = database.record_document_success(
         "C:/in/deleted.png", "C:/out/deleted.pdf", "first", job_id
     )
@@ -321,11 +349,11 @@ def test_delete_document_is_blocked_by_active_or_pending_ocr(
     with pytest.raises(DocumentDeletionBlockedError, match="OCR batch"):
         database.delete_document(document_id)
 
-    database.update_ocr_job(job_id, "awaiting-overwrite", finished=True)
+    database.update_ocr_job(job_id, OcrJobStatus.AWAITING_OVERWRITE, finished=True)
     with pytest.raises(DocumentDeletionBlockedError, match="awaiting overwrite"):
         database.delete_document(document_id)
 
-    database.set_overwrite_confirmation_status(job_id, "overwrite-declined")
+    database.set_overwrite_confirmation_status(job_id, OcrJobStatus.OVERWRITE_DECLINED)
     database.delete_document(document_id)
     assert database.list_documents() == []
 
@@ -352,7 +380,7 @@ def test_delete_documents_is_atomic_for_missing_and_blocked_items(
         database.delete_documents(document_ids[:2])
     assert [row["id"] for row in database.list_documents()] == document_ids
 
-    database.update_ocr_job(job_id, "failed", finished=True)
+    database.update_ocr_job(job_id, OcrJobStatus.FAILED, finished=True)
     database.delete_documents(document_ids[:2])
     assert [row["id"] for row in database.list_documents()] == [document_ids[2]]
 
@@ -547,9 +575,9 @@ def test_ocr_job_started_at_is_not_replaced_by_progress_updates(
     monkeypatch.setattr(database_module, "timestamp", lambda: clock[0])
     job_id = database.create_ocr_job("in", "out", False, "error")
     clock[0] = "started"
-    database.update_ocr_job(job_id, "running")
+    database.update_ocr_job(job_id, OcrJobStatus.RUNNING)
     clock[0] = "later-progress"
-    database.update_ocr_job(job_id, "running", completed_files=1)
+    database.update_ocr_job(job_id, OcrJobStatus.RUNNING, completed_files=1)
     assert database.get_ocr_job(job_id)["started_at"] == "started"
 
 
