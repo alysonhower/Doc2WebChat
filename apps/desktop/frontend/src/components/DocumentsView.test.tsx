@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import type { PyWebviewApi } from '../api/contracts'
+import type { DocumentRow, OcrEvent, PyWebviewApi } from '../api/contracts'
 import { DocumentsView } from './DocumentsView'
 
 describe('DocumentsView', () => {
@@ -342,6 +342,65 @@ describe('DocumentsView', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('renders a complete successful OCR sequence without unknown statuses', () => {
+    const base = { type: 'ocr' as const, jobId: 'complete-job' }
+    const events: OcrEvent[] = [
+      { ...base, sequence: 1, stage: 'discovery' },
+      { ...base, sequence: 2, stage: 'plan-validation' },
+      { ...base, sequence: 3, stage: 'queued', file: 'test/5.png' },
+      { ...base, sequence: 4, stage: 'server-startup' },
+      { ...base, sequence: 5, stage: 'ocr-processing', file: 'test/5.png' },
+      { ...base, sequence: 6, stage: 'writing', file: 'test/5.png' },
+      { ...base, sequence: 7, stage: 'extracting', file: 'test/5.png' },
+      { ...base, sequence: 8, stage: 'persisting', file: 'test/5.png' },
+      { ...base, sequence: 9, stage: 'completed', file: 'test/5.png' },
+      {
+        ...base,
+        sequence: 10,
+        stage: 'progress',
+        completed: 1,
+        failed: 0,
+        skipped: 0,
+        total: 1
+      },
+      {
+        ...base,
+        sequence: 11,
+        stage: 'job-finished',
+        status: 'completed',
+        completed: 1,
+        failed: 0,
+        skipped: 0,
+        total: 1
+      }
+    ]
+
+    render(
+      <DocumentsView
+        documents={[]}
+        events={events}
+        activeJob={{
+          jobId: 'complete-job',
+          status: 'completed',
+          completed: 1,
+          failed: 0,
+          skipped: 0,
+          total: 1
+        }}
+        onJobStarted={vi.fn()}
+        onRefresh={vi.fn()}
+        onDelete={vi.fn()}
+        onDeleteMany={vi.fn()}
+      />
+    )
+
+    expect(screen.queryByText('Status desconhecido')).not.toBeInTheDocument()
+    expect(screen.getByText('Gravando PDF')).toBeInTheDocument()
+    expect(screen.getByText('Extraindo texto')).toBeInTheDocument()
+    expect(screen.getByText('Salvando resultado')).toBeInTheDocument()
+    expect(screen.getAllByText('Concluído')).toHaveLength(3)
+  })
+
   it('uses friendly document statuses and shows recorded warnings', () => {
     render(
       <DocumentsView
@@ -351,7 +410,7 @@ describe('DocumentsView', () => {
             inputPath: 'C:\\source\\scan.pdf',
             resultAvailable: true,
             text: 'searchable',
-            latestStatus: 'completed-with-errors',
+            latestStatus: 'extract-failed',
             latestWarning: 'Text extraction omitted one blank page.'
           }
         ]}
@@ -364,7 +423,7 @@ describe('DocumentsView', () => {
       />
     )
 
-    expect(screen.getByText('Concluído com problemas')).toBeInTheDocument()
+    expect(screen.getByText('Falha ao extrair texto')).toBeInTheDocument()
     expect(
       screen.getByText('Text extraction omitted one blank page.')
     ).toBeInTheDocument()
@@ -600,7 +659,7 @@ describe('DocumentsView', () => {
 
   it('disables all selection and bulk deletion controls while OCR is active', async () => {
     const user = userEvent.setup()
-    const documents = [
+    const documents: DocumentRow[] = [
       {
         id: 1,
         inputPath: 'C:\\source\\one.pdf',

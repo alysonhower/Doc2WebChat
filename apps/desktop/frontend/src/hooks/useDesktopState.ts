@@ -6,20 +6,49 @@ import type {
   BrowserRow,
   DocumentRow,
   InteractionRow,
+  OcrEvent,
   OcrJobState,
   PromptRow
 } from '../api/contracts'
+import {
+  isOcrEvent,
+  validateOcrDocuments,
+  validateOcrEvent,
+  validateOcrJobState
+} from '../api/contracts'
 
-function ocrStatus(event: AppEvent, previous: OcrJobState | null): string {
-  const stage = String(event.stage ?? '')
-  if (stage === 'overwrite-confirmation-required') return 'awaiting-overwrite'
-  if (stage === 'job-finished') return String(event.status ?? 'completed')
-  if (stage === 'job-failed') return 'failed'
-  if (stage === 'discovery') return 'discovering'
-  if (stage === 'plan-validation') return 'planning'
-  if (stage === 'server-startup') return 'starting-server'
-  if (stage) return 'running'
-  return String(event.status ?? previous?.status ?? 'running')
+function ocrStatus(event: OcrEvent): OcrJobState['status'] {
+  const { stage } = event
+  switch (stage) {
+    case 'overwrite-confirmation-required':
+      return 'awaiting-overwrite'
+    case 'job-finished':
+      return event.status
+    case 'job-failed':
+      return 'failed'
+    case 'discovery':
+      return 'discovering'
+    case 'plan-validation':
+      return 'planning'
+    case 'server-startup':
+      return 'starting-server'
+    case 'queued':
+    case 'ocr-processing':
+    case 'writing':
+    case 'extracting':
+    case 'persisting':
+    case 'completed':
+    case 'failed':
+    case 'skipped':
+    case 'progress':
+      return 'running'
+    default:
+      return assertNever(stage)
+  }
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unreachable OCR event stage: ${String(value)}`)
 }
 
 export interface DesktopState {
@@ -46,6 +75,8 @@ export function useDesktopState() {
     setState((current) => ({ ...current, loading: true, error: null }))
     try {
       const bootstrap = await invoke((api) => api.get_bootstrap_state())
+      validateOcrDocuments(bootstrap.documents)
+      validateOcrJobState(bootstrap.activeJob)
       if (!mounted.current) return
       setState((current) => ({
         ...current,
@@ -66,6 +97,7 @@ export function useDesktopState() {
   const refreshDocuments = useCallback(async () => {
     const value = await invoke((api) => api.list_documents())
     const documents = Array.isArray(value) ? value : value.documents
+    validateOcrDocuments(documents)
     setState((current) =>
       current.bootstrap
         ? {
@@ -213,6 +245,7 @@ export function useDesktopState() {
           if (cancelled) return
           sequence.current = Math.max(sequence.current, value.nextSequence)
           if (value.events.length) {
+            for (const event of value.events) validateOcrEvent(event)
             setState((current) => ({
               ...current,
               events: [...current.events, ...value.events].slice(-200)
@@ -223,10 +256,10 @@ export function useDesktopState() {
             for (const event of value.events) {
               const eventType = event.type.toLocaleLowerCase()
               const action = String(event.action ?? '').toLocaleLowerCase()
-              if (event.jobId) {
+              if (isOcrEvent(event)) {
                 setState((current) => {
                   const previous = current.activeJob
-                  const status = ocrStatus(event, previous)
+                  const status = ocrStatus(event)
                   return {
                     ...current,
                     activeJob: {

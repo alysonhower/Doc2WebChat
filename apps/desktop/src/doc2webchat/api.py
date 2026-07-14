@@ -37,6 +37,7 @@ from doc2webchat.ocr import (
     reject_symbolic_path,
     to_normal_path,
 )
+from doc2webchat.ocr_contract import OcrJobStatus
 from doc2webchat.prompts import (
     PromptBuildError,
     expected_children_from_prompt,
@@ -516,7 +517,7 @@ class DesktopApi:
                 raise
             if confirmation_id is not None:
                 self.database.set_overwrite_confirmation_status(
-                    confirmation_id, "overwrite-confirmed"
+                    confirmation_id, OcrJobStatus.OVERWRITE_CONFIRMED
                 )
             self.database.decline_pending_overwrite_jobs(except_job_id=job_id)
             return {"jobId": job_id}

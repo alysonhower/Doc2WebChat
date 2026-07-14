@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { errorMessage, invoke } from '../api/client'
-import type { AppEvent, DocumentRow, OcrJobState } from '../api/contracts'
+import { isOcrEvent } from '../api/contracts'
+import type {
+  AppEvent,
+  DocumentRow,
+  OcrEvent,
+  OcrJobState
+} from '../api/contracts'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import {
   getOcrEventStatusPresentation,
@@ -201,7 +207,12 @@ export function DocumentsView({
   const jobEvents = useMemo(
     () =>
       events
-        .filter((event) => activeJob && event.jobId === activeJob.jobId)
+        .filter(
+          (event): event is OcrEvent =>
+            isOcrEvent(event) &&
+            Boolean(activeJob) &&
+            event.jobId === activeJob?.jobId
+        )
         .slice(-6)
         .reverse(),
     [activeJob, events]
