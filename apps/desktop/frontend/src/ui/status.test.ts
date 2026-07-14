@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   getInteractionStatusPresentation,
+  getOcrEventStatusPresentation,
   getOcrStatusPresentation
 } from './status'
 
@@ -41,5 +42,24 @@ describe('status presentation', () => {
     expect(getOcrStatusPresentation('ocr_failed').label).toBe(
       'Status desconhecido'
     )
+  })
+
+  it('maps OCR orchestration events to their displayed status', () => {
+    expect(getOcrEventStatusPresentation({ stage: 'progress' })).toMatchObject({
+      label: 'Processando',
+      tone: 'info'
+    })
+    expect(
+      getOcrEventStatusPresentation({
+        stage: 'job-finished',
+        status: 'completed'
+      })
+    ).toMatchObject({ label: 'Concluído', tone: 'success' })
+    expect(
+      getOcrEventStatusPresentation({
+        stage: 'job-finished',
+        status: 'completed-with-errors'
+      })
+    ).toMatchObject({ label: 'Concluído com problemas', tone: 'warning' })
   })
 })

@@ -24,16 +24,37 @@ from doc2webchat.database import Database, DatabaseError
 from doc2webchat.errors import AppError
 
 DEFAULT_BASE_URL = "http://localhost:8000"
-DEFAULT_MAX_INFLIGHT = 32
+DEFAULT_MAX_INFLIGHT = 1
 DEFAULT_SERVER_TIMEOUT = 300
+MAX_INFLIGHT_LIMIT = 32
 MAX_OVERWRITE_CONFLICT_PATHS = 20
 PDFA_PROFILE = "pdfa-4"
 PDF_HEADER_LIMIT = 1024
 SERVER_CONTAINER_NAME = "doc2webchat-turboocr"
 SERVER_CONTAINER_LABEL = "doc2webchat.managed"
+SERVER_CONTAINER_CONFIG_LABEL = "doc2webchat.managed.config"
+SERVER_CONTAINER_CONFIG_VERSION = "cpu-single-pipeline-v1"
 SERVER_CONTAINER_IMAGE = "ghcr.io/aiptimizer/turboocr-cpu:latest"
 SERVER_CACHE_NAME = "doc2webchat-trt-cache"
 SERVER_CACHE_TARGET = "/home/ocr/.cache/turbo-ocr"
+SERVER_IMAGE_PULL_ATTEMPTS = 3
+SERVER_IMAGE_PULL_TIMEOUT = 1800
+SERVER_IMAGE_PULL_RETRY_DELAYS = (1.0, 2.0)
+SERVER_PIPELINE_POOL_SIZE = 1
+TRANSIENT_DOCKER_PULL_ERRORS = (
+    "connection refused",
+    "connection reset",
+    "context deadline exceeded",
+    "eof",
+    "i/o timeout",
+    "network is unreachable",
+    "no such host",
+    "server misbehaving",
+    "service unavailable",
+    "temporary failure",
+    "tls handshake timeout",
+    "too many requests",
+)
 SOURCE_SUFFIXES = frozenset(
     {".bmp", ".gif", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp", ".pdf"}
 )
@@ -143,6 +164,7 @@ class ManagedContainer:
     running: bool
     status: str
     exit_code: int
+    configuration_matches: bool = True
 
 
 def add_extended_path_prefix(path: Path) -> Path:
@@ -521,7 +543,49 @@ def require_success(
     return result
 
 
+def command_error_detail(result: subprocess.CompletedProcess[str]) -> str:
+    return (result.stderr or result.stdout).strip()
+
+
+def is_transient_pull_failure(result: subprocess.CompletedProcess[str]) -> bool:
+    detail = command_error_detail(result).lower()
+    return any(marker in detail for marker in TRANSIENT_DOCKER_PULL_ERRORS)
+
+
+def ensure_managed_image(deadline: float) -> None:
+    inspect_result = run_command(
+        ["docker", "image", "inspect", SERVER_CONTAINER_IMAGE],
+        deadline - time.monotonic(),
+    )
+    if inspect_result.returncode == 0:
+        return
+    inspect_detail = command_error_detail(inspect_result).lower()
+    if "no such image" not in inspect_detail and "no such object" not in inspect_detail:
+        require_success(inspect_result, "Inspecting managed TurboOCR image")
+
+    for attempt in range(1, SERVER_IMAGE_PULL_ATTEMPTS + 1):
+        pull_result = run_command(
+            ["docker", "pull", SERVER_CONTAINER_IMAGE],
+            deadline - time.monotonic(),
+        )
+        if pull_result.returncode == 0:
+            return
+        action = "Pulling managed TurboOCR image"
+        if attempt > 1:
+            action = f"{action} after {attempt} attempts"
+        if attempt == SERVER_IMAGE_PULL_ATTEMPTS or not is_transient_pull_failure(
+            pull_result
+        ):
+            require_success(pull_result, action)
+        delay = SERVER_IMAGE_PULL_RETRY_DELAYS[attempt - 1]
+        if deadline - time.monotonic() <= delay:
+            require_success(pull_result, action)
+        time.sleep(delay)
+
+
 def create_managed_container(timeout: float) -> None:
+    ensure_managed_image(time.monotonic() + SERVER_IMAGE_PULL_TIMEOUT)
+    deadline = time.monotonic() + timeout
     command = [
         "docker",
         "run",
@@ -530,6 +594,10 @@ def create_managed_container(timeout: float) -> None:
         SERVER_CONTAINER_NAME,
         "--label",
         f"{SERVER_CONTAINER_LABEL}=true",
+        "--label",
+        f"{SERVER_CONTAINER_CONFIG_LABEL}={SERVER_CONTAINER_CONFIG_VERSION}",
+        "--env",
+        f"PIPELINE_POOL_SIZE={SERVER_PIPELINE_POOL_SIZE}",
         "--publish",
         "127.0.0.1:8000:8000",
         "--publish",
@@ -537,11 +605,12 @@ def create_managed_container(timeout: float) -> None:
         "--volume",
         f"{SERVER_CACHE_NAME}:{SERVER_CACHE_TARGET}",
         "--pull",
-        "missing",
+        "never",
         SERVER_CONTAINER_IMAGE,
     ]
     require_success(
-        run_command(command, timeout), "Starting managed TurboOCR container"
+        run_command(command, deadline - time.monotonic()),
+        "Starting managed TurboOCR container",
     )
 
 
@@ -583,6 +652,13 @@ def parse_managed_container(value: object) -> ManagedContainer:
         )
     if labels.get(SERVER_CONTAINER_LABEL) != "true":
         raise ServerLifecycleError("Container name belongs to an unmanaged container")
+    environment = require_list(config.get("Env"), "container environment")
+    if any(not isinstance(value, str) for value in environment):
+        raise ServerLifecycleError("Managed container environment is invalid")
+    configuration_matches = (
+        labels.get(SERVER_CONTAINER_CONFIG_LABEL) == SERVER_CONTAINER_CONFIG_VERSION
+        and f"PIPELINE_POOL_SIZE={SERVER_PIPELINE_POOL_SIZE}" in environment
+    )
     host_config = require_mapping(container.get("HostConfig"), "host config")
     bindings = require_mapping(host_config.get("PortBindings"), "port bindings")
     if set(bindings) != {"8000/tcp", "50051/tcp"}:
@@ -609,7 +685,7 @@ def parse_managed_container(value: object) -> ManagedContainer:
         or not isinstance(exit_code, int)
     ):
         raise ServerLifecycleError("Managed container state is invalid")
-    return ManagedContainer(running, status, exit_code)
+    return ManagedContainer(running, status, exit_code, configuration_matches)
 
 
 def inspect_managed_container(timeout: float) -> ManagedContainer | None:
@@ -710,6 +786,7 @@ def ensure_server_ready(base_url: str, timeout: int) -> None:
     deadline = time.monotonic() + timeout
     initial = probe_server_readiness(normalized, min(2, timeout))
     managed = False
+    container: ManagedContainer | None = None
     if initial is ServerReadiness.READY:
         return
     if initial is ServerReadiness.GATEWAY_UNAVAILABLE:
@@ -723,8 +800,29 @@ def ensure_server_ready(base_url: str, timeout: int) -> None:
             )
         ensure_docker(max(1, deadline - time.monotonic()))
         container = inspect_managed_container(max(1, deadline - time.monotonic()))
+    elif initial is ServerReadiness.STARTING and normalized == DEFAULT_BASE_URL:
+        try:
+            container = inspect_managed_container(max(1, deadline - time.monotonic()))
+        except ServerLifecycleError as error:
+            if str(error) not in {
+                "Could not inspect managed TurboOCR container",
+                "Docker was not found. Install Docker Desktop and ensure its CLI is on PATH.",
+            }:
+                raise
+    if initial is ServerReadiness.UNAVAILABLE or container is not None:
         if container is None:
-            create_managed_container(max(1, deadline - time.monotonic()))
+            create_managed_container(timeout)
+            deadline = time.monotonic() + timeout
+        elif not container.configuration_matches:
+            require_success(
+                run_command(
+                    ["docker", "rm", "--force", SERVER_CONTAINER_NAME],
+                    max(1, deadline - time.monotonic()),
+                ),
+                "Replacing outdated managed TurboOCR container",
+            )
+            create_managed_container(timeout)
+            deadline = time.monotonic() + timeout
         elif not container.running:
             if container.status not in {"created", "exited"}:
                 raise ServerLifecycleError(
@@ -774,7 +872,7 @@ class OcrManager:
         self.emit = emit
         self.client_factory = client_factory
         self.ensure_ready = ensure_ready
-        self.max_inflight = min(max(1, max_inflight), DEFAULT_MAX_INFLIGHT)
+        self.max_inflight = min(max(1, max_inflight), MAX_INFLIGHT_LIMIT)
         self.active_lock = threading.Lock()
         self.active_thread: threading.Thread | None = None
         self.active_job_id: int | None = None
